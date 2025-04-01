@@ -37,7 +37,7 @@ class SinCAA(nn.Module):
         super().__init__()
         self.topological_net = construct_gps(
             args.topological_net_layers, args.model_channels, num_head=args.num_head, attn_type="multihead", norm=args.norm)
-        self.recover_info_convnet=construct_gps(1, args.model_channels, num_head=args.num_head, attn_type="multihead", norm=args.norm)[0]
+        self.recover_info_convnet=construct_gps(1, args.model_channels, num_head=1, attn_type="multihead", norm=args.norm)[0]
         
         self.node_int_embeder = nn.ModuleList([nn.Embedding(
             100, args.model_channels) for _ in range(3)])
@@ -47,7 +47,7 @@ class SinCAA(nn.Module):
         )
         self.node_float_embeder = nn.Linear(
             4, args.model_channels)
-        self.recovery_info=nn.Linear(args.model_channels, 300)
+        self.recovery_info=nn.Linear(args.model_channels, 100)
         self.softmax=nn.Softmax(-1)
         self.feat_dropout_rate=0.3
         self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
@@ -99,7 +99,7 @@ class SinCAA(nn.Module):
             dmask=(torch.rand_like(node_emb[:, :1])<1-self.feat_dropout_rate).float()
             x_rep=x*dmask
             x_rep=self.recover_info_convnet(x_rep, edge_index, edge_attr=x_rep[edge_index[0]]+x_rep[edge_index[1]], batch=node_residue_index)
-            recovery_info=self.recovery_info(x_rep[dmask.squeeze(-1)<1]).reshape(x.shape[0], 3, -1)[..., 0, :]
+            recovery_info=self.recovery_info(x_rep[dmask.squeeze(-1)<1])
             recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, feats["nodes_int_feats"][..., 0][dmask.squeeze(-1)<1])).mean()
         return x, ret_emb, recovery_info_loss
     

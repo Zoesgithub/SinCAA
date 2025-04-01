@@ -157,7 +157,7 @@ def inner_trainer(rank, world_size, args):
     if args.load_path is not None:
         print(f"loading from {args.load_path} ...")
         param=torch.load(args.load_path)
-        start_epoch=param["epoch"]
+        start_epoch=param["epoch"]+1
         model.load_state_dict(param["state_dict"])
         del param
     val_loss = 99999
