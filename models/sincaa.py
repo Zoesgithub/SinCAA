@@ -64,16 +64,12 @@ class SinCAA(nn.Module):
         edge_feats = feats["edge_attrs"]
         edge_index = feats["edges"]
         node_residue_index=feats["node_residue_index"]
-        #=feats["pe"].long().reshape(-1)
 
         assert edge_index.shape[1] == edge_feats.shape[0], f"{edge_index.shape} {edge_feats.shape}"
         assert edge_index.shape[0] == 2, edge_index.shape
         assert node_int_feats.shape[-1]==3
         assert node_int_feats.max()<100, f"{node_int_feats.max}"
 
-        # embedding
-        node_residue_index = feats["node_residue_index"]
-        
         node_int_emb_list = [self.node_int_embeder[i](
             node_int_feats[..., i]) for i in range(node_int_feats.shape[-1])]
         node_int_emb = sum(node_int_emb_list)/len(node_int_emb_list)
@@ -99,11 +95,11 @@ class SinCAA(nn.Module):
         
         ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="mean")
         recovery_info_loss=0
-        for i in range(5):
+        for i in range(3):
             dmask=(torch.rand_like(node_emb[:, :1])<1-self.feat_dropout_rate).float()
             x_rep=x*dmask
             x_rep=self.recover_info_convnet(x_rep, edge_index, edge_attr=x_rep[edge_index[0]]+x_rep[edge_index[1]], batch=node_residue_index)
-            recovery_info=self.recovery_info(x_rep).reshape(x.shape[0], 3, -1)[..., 0, :][dmask.squeeze(-1)<1]
+            recovery_info=self.recovery_info(x_rep[dmask.squeeze(-1)<1]).reshape(x.shape[0], 3, -1)[..., 0, :]
             recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, feats["nodes_int_feats"][..., 0][dmask.squeeze(-1)<1])).mean()
         return x, ret_emb, recovery_info_loss
     
