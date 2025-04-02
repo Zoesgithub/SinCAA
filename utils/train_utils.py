@@ -78,7 +78,7 @@ def l2_loss(pred, gt, node_residue_index,node_is_pseudo, permutation,  eps=1e-6,
     
 def update(student, teacher):
     with torch.no_grad():
-        m = 0.9
+        m = 0.996
         for param_q, param_k in zip(student.parameters(), teacher.parameters()):
             param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
 
@@ -194,7 +194,7 @@ def inner_trainer(rank, world_size, args):
             with torch.no_grad():
                 model_ema.eval()
                 old_emb=model_ema.forward(aa_data, mol_data, aa_neighbor_data)[-1]
-            st_loss= ((1 - ( nn.functional.normalize(old_emb, p=2, dim=-1) *  nn.functional.normalize(new_emb, p=2, dim=-1)).sum(dim=-1)).pow_(alpha)).mean()
+            st_loss= ((1 - ( torch.nn.functional.normalize(old_emb, p=2, dim=-1) *  torch.nn.functional.normalize(new_emb, p=2, dim=-1)).sum(dim=-1)).pow_(3)).mean()
             # reduce to one device
             all_aa_pseudo_emb=aa_pseudo_emb#pairwise_sync(aa_pseudo_emb)      
             all_neighbor_pseudo_emb=neighbor_pseudo_emb#pairwise_sync(neighbor_pseudo_emb)      
@@ -217,7 +217,7 @@ def inner_trainer(rank, world_size, args):
             if i % args.logger_step == 0 and rank==0:
                 logger.info(
                     f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.item()} ;  train acc { acc.float().sum().item()/len(acc)} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()} ; st loss {st_loss.item()}")
-        update(model, model_ema)
+            update(model, model_ema)
         if epoch%10==0:
             logger.info(f"Finish training for epoch {epoch}")
             val_aa_l2_loss = 0
