@@ -115,7 +115,7 @@ class SinCAA(nn.Module):
         '''_, aa_emb, aa_rec_loss= self.calculate_topol_emb(aa_data)
         _, mol_emb, mol_rec_loss= self.calculate_topol_emb(mol_data)
         _, neigh_emb, neigh_rec_loss= self.calculate_topol_emb(neighbor_data)'''
-        _, emb, rec_loss= self.calculate_topol_emb(merge_feat)
+        merge_emb, emb, rec_loss= self.calculate_topol_emb(merge_feat)
         na=aa_data["node_residue_index"].max()+1
         nm=mol_data["node_residue_index"].max()+1
         num_n=neighbor_data["node_residue_index"].max()+1
@@ -123,4 +123,4 @@ class SinCAA(nn.Module):
         neighbor_pseudo_emb=emb[na+nm:]
 
         #return aa_emb,neigh_emb, aa_rec_loss+mol_rec_loss+neigh_rec_loss, self.out_similarity(torch.cat([aa_emb, neigh_emb], -1)).squeeze(-1)
-        return aa_pseudo_emb,neighbor_pseudo_emb, rec_loss, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1)
+        return aa_pseudo_emb,neighbor_pseudo_emb, rec_loss, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), merge_emb

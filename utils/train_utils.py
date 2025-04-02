@@ -10,6 +10,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
 from utils.align_utils import get_optimal_align_by_residue
 from utils.rigid_utils import RobustRigid
+from copy import deepcopy
 
 def setup(rank, world_size):
     dist.init_process_group(
@@ -75,7 +76,11 @@ def l2_loss(pred, gt, node_residue_index,node_is_pseudo, permutation,  eps=1e-6,
     loss=torch.stack(loss, -1)
     return loss.min(-1).values.mean()
     
-
+def update(student, teacher):
+    with torch.no_grad():
+        m = 0.9
+        for param_q, param_k in zip(student.parameters(), teacher.parameters()):
+            param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
 
 def contrastive_loss(pred, pos,eps=1e-6, rescale_factor=10,pmask=None):
     # get_distance
@@ -172,7 +177,7 @@ def inner_trainer(rank, world_size, args):
                 if i in map_dict[j] or j in map_dict[i]:
                     ret[i,j]=1
         return ret
-    
+    model_ema=deepcopy(model)
     for epoch in range(start_epoch,args.num_epochs):
         #print(scheduler.get_last_lr())
         for i, d in enumerate(train_data_loader):
@@ -184,19 +189,22 @@ def inner_trainer(rank, world_size, args):
                 for k in Dict:
                     if hasattr(Dict[k], "cuda"):
                         Dict[k] = Dict[k].to(rank)
-            aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity = model.forward(
+            aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, new_emb = model.forward(
                 aa_data, mol_data, aa_neighbor_data)
-         
+            with torch.no_grad():
+                model_ema.eval()
+                old_emb=model_ema.forward(aa_data, mol_data, aa_neighbor_data)[-1]
+            st_loss= ((1 - ( nn.functional.normalize(old_emb, p=2, dim=-1) *  nn.functional.normalize(new_emb, p=2, dim=-1)).sum(dim=-1)).pow_(alpha)).mean()
             # reduce to one device
-            all_aa_pseudo_emb=pairwise_sync(aa_pseudo_emb)      
-            all_neighbor_pseudo_emb=pairwise_sync(neighbor_pseudo_emb)      
-            all_neighbor_index=pairwise_sync(aa_data["index"])
+            all_aa_pseudo_emb=aa_pseudo_emb#pairwise_sync(aa_pseudo_emb)      
+            all_neighbor_pseudo_emb=neighbor_pseudo_emb#pairwise_sync(neighbor_pseudo_emb)      
+            all_neighbor_index=aa_data["index"]#pairwise_sync(aa_data["index"])
             aa_contrastive_loss, acc = contrastive_loss(
                 all_aa_pseudo_emb, all_neighbor_pseudo_emb,  pmask=get_neighbor_mask(all_neighbor_index,all_neighbor_index,train_map_between_neighbors))
             assert aa_data["sim"].shape==similarity.shape
             similarity_loss=-(torch.log(similarity)*aa_data["sim"]+torch.log(1-similarity)*(1-aa_data["sim"])).mean()
             
-            loss =aa_contrastive_loss+rec_loss+similarity_loss
+            loss =aa_contrastive_loss+rec_loss+similarity_loss+st_loss
             if args.aba:
                 loss=rec_loss
             loss.backward()
@@ -208,8 +216,8 @@ def inner_trainer(rank, world_size, args):
                 exit()
             if i % args.logger_step == 0 and rank==0:
                 logger.info(
-                    f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.item()} ;  train acc { acc.float().sum().item()/len(acc)} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()}")
-        #scheduler.step()
+                    f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.item()} ;  train acc { acc.float().sum().item()/len(acc)} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()} ; st loss {st_loss.item()}")
+        update(model, model_ema)
         if epoch%10==0:
             logger.info(f"Finish training for epoch {epoch}")
             val_aa_l2_loss = 0
@@ -227,12 +235,12 @@ def inner_trainer(rank, world_size, args):
                         for k in Dict:
                             if hasattr(Dict[k], "cuda"):
                                 Dict[k] = Dict[k].to(rank)
-                    aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity= model.forward(
+                    aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, _= model.forward(
                         aa_data, mol_data, aa_neighbor_data)
 
-                    all_aa_pseudo_emb=pairwise_sync(aa_pseudo_emb)      
-                    all_neighbor_pseudo_emb=pairwise_sync(neighbor_pseudo_emb)      
-                    all_neighbor_index=pairwise_sync(aa_data["index"])
+                    all_aa_pseudo_emb=aa_pseudo_emb#pairwise_sync(aa_pseudo_emb)      
+                    all_neighbor_pseudo_emb=neighbor_pseudo_emb#pairwise_sync(neighbor_pseudo_emb)      
+                    all_neighbor_index=aa_data["index"]#pairwise_sync(aa_data["index"])
                     aa_contrastive_loss, acc = contrastive_loss(
                     all_aa_pseudo_emb, all_neighbor_pseudo_emb,  pmask=get_neighbor_mask(all_neighbor_index,all_neighbor_index,train_map_between_neighbors)) 
                     similarity_loss=-(torch.log(similarity)*aa_data["sim"]+torch.log(1-similarity)*(1-aa_data["sim"])).mean()
