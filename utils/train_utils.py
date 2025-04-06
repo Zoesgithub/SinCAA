@@ -241,9 +241,9 @@ def inner_trainer(rank, world_size, args):
                     aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, _= model.forward(
                         aa_data, mol_data, aa_neighbor_data)
 
-                    all_aa_pseudo_emb=aa_pseudo_emb#pairwise_sync(aa_pseudo_emb)      
-                    all_neighbor_pseudo_emb=neighbor_pseudo_emb#pairwise_sync(neighbor_pseudo_emb)      
-                    all_neighbor_index=aa_data["index"]#pairwise_sync(aa_data["index"])
+                    all_aa_pseudo_emb=aa_pseudo_emb
+                    all_neighbor_pseudo_emb=neighbor_pseudo_emb
+                    all_neighbor_index=aa_data["index"]
                     aa_contrastive_loss, acc = contrastive_loss(
                     all_aa_pseudo_emb, all_neighbor_pseudo_emb,  pmask=get_neighbor_mask(all_neighbor_index,all_neighbor_index,train_map_between_neighbors)) 
                     similarity_loss=-(torch.log(similarity)*aa_data["sim"]+torch.log(1-similarity)*(1-aa_data["sim"])).mean()
