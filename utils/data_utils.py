@@ -249,7 +249,7 @@ class MolDataset(Dataset):
         
         mol_step=(len(self.mol_data)+world_size-1)//world_size
         self.mol_index=list(range(len(self.mol_data)))[mol_step*rank:mol_step*rank+mol_step]
-        print(len(self.index), len(self.mol_index))
+        
         
         
     def build_neighbor_key(self):
