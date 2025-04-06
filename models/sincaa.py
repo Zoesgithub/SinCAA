@@ -121,13 +121,11 @@ class SinCAA(nn.Module):
 
     def forward(self, aa_data, mol_data, neighbor_data):
         merge_feat=collate_fn([[aa_data], [neighbor_data]])[0]
-        merge_emb, emb, rec_loss= self.calculate_topol_emb(merge_feat)
+        merge_emb, emb, rec_loss, _= self.calculate_topol_emb(merge_feat)
         na=aa_data["node_residue_index"].max()+1
-        nm=mol_data["node_residue_index"].max()+1
-        num_n=neighbor_data["node_residue_index"].max()+1
         aa_pseudo_emb=emb[:na]
-        neighbor_pseudo_emb=emb[na+nm:]
-        
-        _, _, mol_rec_loss=self.calculate_topol_emb(mol_data)
+        neighbor_pseudo_emb=emb[na:]
+        mol_emb, _, mol_rec_loss, _=self.calculate_topol_emb(mol_data)
+        merge_emb=torch.cat([merge_emb, mol_emb], 0)
         #return aa_emb,neigh_emb, aa_rec_loss+mol_rec_loss+neigh_rec_loss, self.out_similarity(torch.cat([aa_emb, neigh_emb], -1)).squeeze(-1)
         return aa_pseudo_emb,neighbor_pseudo_emb, mol_rec_loss, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), merge_emb
