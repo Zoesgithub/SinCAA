@@ -248,7 +248,7 @@ class MolDataset(Dataset):
         self.num_level=num_level
         
         mol_step=(len(self.mol_data)+world_size-1)//world_size
-        self.mol_index=list(range(len(self.mol_data)))[step*rank:step*rank+step]
+        self.mol_index=list(range(len(self.mol_data)))[mol_step*rank:mol_step*rank+mol_step]
         print(len(self.index), len(self.mol_index))
         
         
@@ -264,10 +264,11 @@ class MolDataset(Dataset):
             
         
     def __len__(self):
-        return len(self.index)
+        return max(len(self.index), len(self.mol_index))
 
     def __getitem__(self, index):
-        index=self.index[index]
+        mol_idx=self.mol_index[index%len(self.mol_index)]
+        index=self.index[index%len(self.index)]
         mid_aa = self.aa_smiles[index]
         neighbors = self.aa_neighbors[index].split(";")
         if len(neighbors) > 0:
@@ -278,8 +279,8 @@ class MolDataset(Dataset):
         else:
             neighbor_aa = mid_aa
             sim=torch.tensor(1).reshape(-1)
-        mol_idx=self.mol_index[index%len(self.mol_index)]
-        return get_graph(smiles=mid_aa, max_level=self.num_level), get_graph(self.mol_data[mol_idx], max_level=self.num_level), get_graph(smiles=neighbor_aa, max_level=self.num_level)
+        
+        return get_graph(smiles=mid_aa, max_level=self.num_level), get_graph(smiles=self.mol_data[mol_idx], max_level=self.num_level), get_graph(smiles=neighbor_aa, max_level=self.num_level)
        
 
 
