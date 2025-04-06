@@ -204,7 +204,7 @@ def inner_trainer(rank, world_size, args):
             aa_contrastive_loss, acc = contrastive_loss(
                 all_aa_pseudo_emb, all_neighbor_pseudo_emb,  pmask=get_neighbor_mask(all_neighbor_index,all_neighbor_index,train_map_between_neighbors))
             assert aa_data["sim"].shape==similarity.shape
-            similarity_loss=-(torch.log(similarity)*aa_data["sim"]+torch.log(1-similarity)*(1-aa_data["sim"])).mean()
+            similarity_loss=-(torch.log(similarity.clamp(1e-6))*aa_data["sim"]+torch.log((1-similarity).clamp(1e-6))*(1-aa_data["sim"])).mean()
             
             loss =aa_contrastive_loss+rec_loss+similarity_loss+st_loss
             if args.aba:
@@ -214,7 +214,7 @@ def inner_trainer(rank, world_size, args):
             synchronize_gradients(model)
             optimizer.step()
             if torch.isnan(loss):
-                print(aa_pred_cord, aa_data_gt, aa_pseudo_emb)
+                print(aa_data["sim"], aa_pseudo_emb)
                 exit()
             if i % args.logger_step == 0 and rank==0:
                 logger.info(
