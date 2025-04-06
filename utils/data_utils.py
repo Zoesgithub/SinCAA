@@ -247,6 +247,10 @@ class MolDataset(Dataset):
         self.index=list(range(len(self.aa_smiles)))[step*rank:step*rank+step]
         self.num_level=num_level
         
+        mol_step=(len(self.mol_data)+world_size-1)//world_size
+        self.mol_index=list(range(len(self.mol_data)))[step*rank:step*rank+step]
+        print(len(self.index), len(self.mol_index))
+        
         
     def build_neighbor_key(self):
         map_str_to_idx={}
@@ -274,50 +278,9 @@ class MolDataset(Dataset):
         else:
             neighbor_aa = mid_aa
             sim=torch.tensor(1).reshape(-1)
-        mol_feats = None
-        if self.mol_data is not None:
-            while True:
-                mol = self.mol_data[random.randint(0, len(self.mol_data)-1)]
-                prefix = f'{self.cache_path}/{myHash(str(mol))}'
-                endfix = list(range(5))
-                random.shuffle(endfix)
-                mol_path = None
-                for v in endfix:
-                    if os.path.exists(f'{prefix}_{v}.mol'):
-                        mol_path = f'{prefix}_{v}.mol'
-                        break
-                if mol_path is None:
-                    continue
-                try:
-                    mol_feats = load_conf(
-                        mol_path, mol,  max_level=self.num_level)
-                except Exception as e:
-                    print(e)
-                    continue
-                break
-
-        prefix = f'{self.cache_path}/{myHash(mid_aa)}'
-        aa_path = None
+        mol_idx=self.mol_index[index%len(self.mol_index)]
+        return get_graph(smiles=mid_aa, max_level=self.num_level), get_graph(self.mol_data[mol_idx], max_level=self.num_level), get_graph(smiles=neighbor_aa, max_level=self.num_level)
        
-        endfix = list(range(num_confs))
-        random.shuffle(endfix)
-        for v in endfix:
-            if os.path.exists(f'{prefix}_{v}.mol') and  Chem.MolFromMolFile(f'{prefix}_{v}.mol') is not None:
-                aa_path = f'{prefix}_{v}.mol'
-                break
-              
-        assert aa_path is not None, f"{prefix} {mid_aa}"
-        aa_feats = load_conf(
-            aa_path, mid_aa, max_level=self.num_level)
-        assert aa_feats is not None, aa_path
-        aa_feats["index"]=torch.tensor(index).reshape(-1)
-        aa_feats["sim"]=sim
-        neigh=get_graph(smiles=neighbor_aa, max_level=self.num_level)
-        #if random.random()>0.5:
-        #    aa_feats["nodes_int_feats"]=aa_feats["nodes_int_feats"][:-1]
-        #    aa_feats["nodes_float_feats"]=aa_feats["nodes_float_feats"][:-1]
-        
-        return aa_feats, mol_feats, neigh
 
 
 def collate_fn(batch):
