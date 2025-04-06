@@ -191,16 +191,16 @@ def inner_trainer(rank, world_size, args):
                 for k in Dict:
                     if hasattr(Dict[k], "cuda"):
                         Dict[k] = Dict[k].to(rank)
-            aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, new_emb, mask = model.forward(
+            aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, new_emb = model.forward(
                 aa_data, mol_data, aa_neighbor_data)
             with torch.no_grad():
                 model_ema.eval()
-                old_aa_pseudo_emb, _, _, _, old_emb, _=model_ema.forward(aa_data, mol_data, aa_neighbor_data, mask=None)
-            st_loss= ((1 - ( torch.nn.functional.normalize(old_emb, p=2, dim=-1) *  torch.nn.functional.normalize(new_emb, p=2, dim=-1)).sum(dim=-1)).pow_(3)).mean()+((1 - ( torch.nn.functional.normalize(old_aa_pseudo_emb, p=2, dim=-1) *  torch.nn.functional.normalize(aa_pseudo_emb, p=2, dim=-1)).sum(dim=-1)).pow_(3)).mean()
+                old_aa_pseudo_emb, _, _, _, old_emb=model_ema.forward(aa_data, mol_data, aa_neighbor_data, mask=None)
+            st_loss= ((1 - ( torch.nn.functional.normalize(old_emb, p=2, dim=-1) *  torch.nn.functional.normalize(new_emb, p=2, dim=-1)).sum(dim=-1)).pow_(3)).mean()
             # reduce to one device
-            all_aa_pseudo_emb=aa_pseudo_emb#pairwise_sync(aa_pseudo_emb)      
-            all_neighbor_pseudo_emb=neighbor_pseudo_emb#pairwise_sync(neighbor_pseudo_emb)      
-            all_neighbor_index=aa_data["index"]#pairwise_sync(aa_data["index"])
+            all_aa_pseudo_emb=aa_pseudo_emb
+            all_neighbor_pseudo_emb=neighbor_pseudo_emb
+            all_neighbor_index=aa_data["index"]
             aa_contrastive_loss, acc = contrastive_loss(
                 all_aa_pseudo_emb, all_neighbor_pseudo_emb,  pmask=get_neighbor_mask(all_neighbor_index,all_neighbor_index,train_map_between_neighbors))
             assert aa_data["sim"].shape==similarity.shape
@@ -238,7 +238,7 @@ def inner_trainer(rank, world_size, args):
                         for k in Dict:
                             if hasattr(Dict[k], "cuda"):
                                 Dict[k] = Dict[k].to(rank)
-                    aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, _, _= model.forward(
+                    aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, _= model.forward(
                         aa_data, mol_data, aa_neighbor_data)
 
                     all_aa_pseudo_emb=aa_pseudo_emb#pairwise_sync(aa_pseudo_emb)      
