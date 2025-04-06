@@ -142,7 +142,7 @@ class AminoAcid():
             atom = self.mol.GetAtomWithIdx(inner_idx)
             self._node_int_feats[i, 0] = atom.GetAtomicNum()
             self._node_int_feats[i,
-                                 1] = ud_constants.CIPCodeDict[self.cip_info[inner_idx]]
+                                 1] = allowable_features['possible_chirality_list'].index(atom.GetChiralTag())#ud_constants.CIPCodeDict[self.cip_info[inner_idx]]
             self._node_int_feats[i,
                                  2] = atom.GetFormalCharge()+10
 
