@@ -271,14 +271,12 @@ class MolDataset(Dataset):
         index=self.index[index%len(self.index)]
         mid_aa = self.aa_smiles[index]
         neighbors = self.aa_neighbors[index].split(";")
-        if len(neighbors) > 0:
-            idx=random.randint(0, len(neighbors)-1)
-            neighbor_aa = neighbors[idx]
-            sim=torch.tensor(float(self.aa_similarity[index].split(";")[idx])).reshape(-1)
+        assert len(neighbors) > 0
+        idx=random.randint(0, len(neighbors)-1)
+        neighbor_aa = neighbors[idx]
+        sim=torch.tensor(float(self.aa_similarity[index].split(";")[idx])).reshape(-1)
   
-        else:
-            neighbor_aa = mid_aa
-            sim=torch.tensor(1).reshape(-1)
+        assert sim>0 and sim<1, sim
         aa_data=get_graph(smiles=mid_aa, max_level=self.num_level)
         mol_data=get_graph(smiles=self.mol_data[mol_idx], max_level=self.num_level)
         nei_data=get_graph(smiles=neighbor_aa, max_level=self.num_level)
