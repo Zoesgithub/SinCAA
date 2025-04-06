@@ -53,7 +53,7 @@ class SinCAA(nn.Module):
         self.node_float_embeder = nn.Linear(
             4, args.model_channels)
         self.recovery_info=nn.Linear(args.model_channels, 200)
-        self.feat_dropout_rate=0.3
+        self.feat_dropout_rate=0.5
         self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
         
     def get_num_params(self):
