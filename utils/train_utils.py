@@ -169,7 +169,7 @@ def inner_trainer(rank, world_size, args):
     train_map_between_neighbors=train_data.build_neighbor_key()
     val_map_between_neighbors=valid_data.build_neighbor_key()
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
-    #scheduler=torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
+    
     scheduler = lambda epoch :( 1 + np.cos((epoch) * np.pi / args.num_epochs) ) * 0.5
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=scheduler)
     def get_neighbor_mask(iindex,jindex, map_dict):
@@ -195,7 +195,7 @@ def inner_trainer(rank, world_size, args):
                 aa_data, mol_data, aa_neighbor_data)
             with torch.no_grad():
                 model_ema.eval()
-                old_aa_pseudo_emb, _, _, _, old_emb=model_ema.forward(aa_data, mol_data, aa_neighbor_data, mask=None)
+                old_aa_pseudo_emb, _, _, _, old_emb=model_ema.forward(aa_data, mol_data, aa_neighbor_data)
             st_loss= ((1 - ( torch.nn.functional.normalize(old_emb, p=2, dim=-1) *  torch.nn.functional.normalize(new_emb, p=2, dim=-1)).sum(dim=-1)).pow_(3)).mean()
             # reduce to one device
             all_aa_pseudo_emb=aa_pseudo_emb
