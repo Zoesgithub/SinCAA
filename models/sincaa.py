@@ -10,12 +10,13 @@ def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm"):
     for _ in range(num_layers):
         net = nn.Sequential(
             nn.Linear(channels, channels),
-            nn.LeakyReLU(),
+            nn.PReLU(),
             nn.Linear(channels, channels),
         )
 
         convs.append(gnn.GPSConv(channels, gnn.GINEConv(net), heads=num_head,
-                                 attn_type=attn_type, norm=norm, act="gelu"))
+                                 attn_type=attn_type, norm=norm, act="PReLU"))
+        #convs.append(gnn.GINEConv(net))
     return convs
 
 def construct_gin(num_layers, channels):
@@ -23,7 +24,7 @@ def construct_gin(num_layers, channels):
     for _ in range(num_layers):
         net = nn.Sequential(
             nn.Linear(channels, channels),
-            nn.LeakyReLU(),
+            nn.PReLU(),
             nn.Linear(channels, channels),
         )
 
@@ -35,20 +36,23 @@ def construct_gin(num_layers, channels):
 class SinCAA(nn.Module):
     def __init__(self, args) -> None:
         super().__init__()
-        self.topological_net = construct_gps(
-            args.topological_net_layers, args.model_channels, num_head=args.num_head, attn_type="multihead", norm=args.norm)
-        self.recover_info_convnet=construct_gps(1, args.model_channels, num_head=1, attn_type="multihead", norm=args.norm)[0]
+        if hasattr(args, "model") and args.model=="GAT":
+            self.topological_net=gnn.models.GAT(args.model_channels, args.model_channels, args.topological_net_layers)
+            self.model="GAT"
+        else:
+            self.topological_net=construct_gps(args.topological_net_layers, args.model_channels, num_head=args.num_head, attn_type="multihead", norm=args.norm)
+            self.model="GPS"
+        self.recover_info_convnet=gnn.models.GIN(args.model_channels, args.model_channels, 1)
         
         self.node_int_embeder = nn.ModuleList([nn.Embedding(
             100, args.model_channels) for _ in range(3)])
         self.edge_embeder = nn.ModuleList(
             [nn.Embedding(100,  args.model_channels)
-             for _ in range(1)]
+             for _ in range(2)]
         )
         self.node_float_embeder = nn.Linear(
             4, args.model_channels)
-        self.recovery_info=nn.Linear(args.model_channels, 100)
-        self.softmax=nn.Softmax(-1)
+        self.recovery_info=nn.Linear(args.model_channels, 200)
         self.feat_dropout_rate=0.3
         self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
         
@@ -57,7 +61,7 @@ class SinCAA(nn.Module):
         topological_net=sum(p.numel() for p in self.topological_net.parameters())
         return {"total":total, "topological_net":topological_net}
 
-    def calculate_topol_emb(self, feats):
+    def calculate_topol_emb(self, feats, mask=None):
         node_int_feats = feats["nodes_int_feats"]
       
         node_float_feats = feats["nodes_float_feats"]
@@ -78,30 +82,35 @@ class SinCAA(nn.Module):
         
         edge_emb_list = [self.edge_embeder[i](
             edge_feats[..., i]) for i in range(edge_feats.shape[-1])]
+        
         edge_emb = sum(edge_emb_list)/len(edge_emb_list)
         assert edge_emb.shape[0] == edge_index.shape[1]
-        if self.training:
-            mask=(torch.rand_like(node_emb[:, :1])<1-self.feat_dropout_rate).float()
-        else:
-            mask=torch.zeros_like(node_emb[:, :1])+1
+        if mask is None:
+            if self.training:
+                mask=(torch.rand_like(node_emb[:, :1])<1-self.feat_dropout_rate).float()
+            else:
+                mask=torch.zeros_like(node_emb[:, :1])+1
         # gps forward
         x = node_emb*mask
         inpx=x
+        assert edge_index.max()==x.shape[0]-1
         assert edge_index.shape[-1]==0 or edge_index.max()<len(x), f"{edge_index.max} {x.shape}"
-        
-        for conv in self.topological_net:
-            x = conv(x, edge_index, edge_attr=edge_emb,
-                     batch=node_residue_index)
+        if self.model=="GAT":
+            x=self.topological_net(x, edge_index,  edge_attr=edge_emb,batch=node_residue_index)
+        else:
+            for conv in self.topological_net:
+                x = conv(x, edge_index, edge_attr=edge_emb,batch=node_residue_index)
         
         ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="mean")
         recovery_info_loss=0
         for i in range(3):
             dmask=(torch.rand_like(node_emb[:, :1])<1-self.feat_dropout_rate).float()
             x_rep=x*dmask
-            x_rep=self.recover_info_convnet(x_rep, edge_index, edge_attr=x_rep[edge_index[0]]+x_rep[edge_index[1]], batch=node_residue_index)
-            recovery_info=self.recovery_info(x_rep[dmask.squeeze(-1)<1])
-            recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, feats["nodes_int_feats"][..., 0][dmask.squeeze(-1)<1])).mean()
-        return x, ret_emb, recovery_info_loss
+            x_rep=self.recover_info_convnet(x_rep, edge_index,batch=node_residue_index)#, edge_attr=x_rep[edge_index[0]]+x_rep[edge_index[1]], batch=node_residue_index)
+            recovery_info=self.recovery_info(x_rep[dmask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
+            l=feats["nodes_int_feats"][..., :2][dmask.squeeze(-1)<1].reshape(-1)
+            recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l)).mean()
+        return x, ret_emb, recovery_info_loss, mask
     
 
     def inner_forward(self, data):
