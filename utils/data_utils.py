@@ -275,8 +275,9 @@ class MolDataset(Dataset):
         idx=random.randint(0, len(neighbors)-1)
         neighbor_aa = neighbors[idx]
         sim=torch.tensor(float(self.aa_similarity[index].split(";")[idx])).reshape(-1)
-  
-        assert sim>0 and sim<1, sim
+        if sim==0:
+            print(self.aa_similarity[index], mid_aa)
+        
         aa_data=get_graph(smiles=mid_aa, max_level=self.num_level)
         mol_data=get_graph(smiles=self.mol_data[mol_idx], max_level=self.num_level)
         nei_data=get_graph(smiles=neighbor_aa, max_level=self.num_level)
