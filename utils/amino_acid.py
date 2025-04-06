@@ -5,6 +5,39 @@ import utils.align_utils as autils
 import utils.data_constants as ud_constants
 import scipy
 from utils.similarity_utils import aa_pattern
+import rdkit
+
+allowable_features = {
+    'possible_atomic_num_list': list(range(1, 119)),
+    'possible_formal_charge_list': [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5],
+    'possible_chirality_list': [
+        Chem.rdchem.ChiralType.CHI_UNSPECIFIED,
+        Chem.rdchem.ChiralType.CHI_TETRAHEDRAL_CW,
+        Chem.rdchem.ChiralType.CHI_TETRAHEDRAL_CCW,
+        Chem.rdchem.ChiralType.CHI_OTHER
+    ],
+    'possible_hybridization_list': [
+        Chem.rdchem.HybridizationType.S,
+        Chem.rdchem.HybridizationType.SP, Chem.rdchem.HybridizationType.SP2,
+        Chem.rdchem.HybridizationType.SP3, Chem.rdchem.HybridizationType.SP3D,
+        Chem.rdchem.HybridizationType.SP3D2, Chem.rdchem.HybridizationType.UNSPECIFIED
+    ],
+    'possible_numH_list': [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    'possible_implicit_valence_list': [0, 1, 2, 3, 4, 5, 6],
+    'possible_degree_list': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    'possible_bonds': [
+        Chem.rdchem.BondType.SINGLE,
+        Chem.rdchem.BondType.DOUBLE,
+        Chem.rdchem.BondType.TRIPLE,
+        Chem.rdchem.BondType.AROMATIC
+    ],
+    'possible_bond_dirs': [  # only for double bond stereo information
+        Chem.rdchem.BondDir.NONE,
+        Chem.rdchem.BondDir.ENDUPRIGHT,
+        Chem.rdchem.BondDir.ENDDOWNRIGHT,
+        Chem.rdchem.BondDir.EITHERDOUBLE
+    ]
+}
 
 class AminoAcid():
     def __init__(
@@ -142,7 +175,11 @@ class AminoAcid():
                 edges.append([start_save_idx, end_save_idx])
                 edges.append([end_save_idx, start_save_idx])
                 edge_attrs.extend(
-                    [ud_constants.MolBondDict[str(bond.GetBondType())], ud_constants.MolBondDict[str(bond.GetBondType())]])
+                    [[ud_constants.MolBondDict[str(bond.GetBondType())], allowable_features[
+                'possible_bond_dirs'].index(
+                bond.GetBondDir())], [ud_constants.MolBondDict[str(bond.GetBondType())], allowable_features[
+                'possible_bond_dirs'].index(
+                bond.GetBondDir())]])
                 
         # add pseudo edges
         '''for i in range(self.non_H_atoms):
@@ -151,7 +188,7 @@ class AminoAcid():
             edge_attrs.extend([ud_constants.MolBondDict["PSEUDO"],
                               ud_constants.MolBondDict["PSEUDO"]])'''
         self._edges = np.array(edges, dtype=int).reshape(-1, 2)
-        self._edge_attrs = np.array(edge_attrs, dtype=int).reshape(-1)
+        self._edge_attrs = np.array(edge_attrs, dtype=int)#.reshape([-1, 2])
         
         # centralization of coordinates
         self._out_default_positions=self._out_default_positions-self._out_default_positions.mean(0, keepdims=True)
@@ -185,12 +222,7 @@ class AminoAcid():
         ret= {
             "nodes_int_feats": self._node_int_feats,
             "nodes_float_feats": self._node_float_feats,
-            #"pe":self._out_pe,
-            #"permutation":self._out_permutation,
-            #"pseudo_node_index":np.array(self.non_H_atoms).reshape(-1),
-
             "edges": self._edges,
-            "edge_attrs": self._edge_attrs.reshape(-1, 1),
-            #"default_positions": self._out_default_positions.reshape(-1, 3),
+            "edge_attrs": self._edge_attrs#.reshape(-1, 2),
         }
         return ret

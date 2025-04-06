@@ -11,6 +11,7 @@ import torch.multiprocessing as mp
 from utils.align_utils import get_optimal_align_by_residue
 from utils.rigid_utils import RobustRigid
 from copy import deepcopy
+import numpy as np
 
 def setup(rank, world_size):
     dist.init_process_group(
@@ -162,7 +163,6 @@ def inner_trainer(rank, world_size, args):
     if args.load_path is not None:
         print(f"loading from {args.load_path} ...")
         param=torch.load(args.load_path)
-        start_epoch=param["epoch"]+1
         model.load_state_dict(param["state_dict"])
         del param
     val_loss = 99999
@@ -170,6 +170,8 @@ def inner_trainer(rank, world_size, args):
     val_map_between_neighbors=valid_data.build_neighbor_key()
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
     #scheduler=torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
+    scheduler = lambda epoch :( 1 + np.cos((epoch) * np.pi / args.num_epochs) ) * 0.5
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=scheduler)
     def get_neighbor_mask(iindex,jindex, map_dict):
         ret=torch.zeros([len(iindex), len(jindex)])
         for i in range(len(ret)):
@@ -179,7 +181,7 @@ def inner_trainer(rank, world_size, args):
         return ret
     model_ema=deepcopy(model)
     for epoch in range(start_epoch,args.num_epochs):
-        #print(scheduler.get_last_lr())
+        print(scheduler.get_last_lr())
         for i, d in enumerate(train_data_loader):
             optimizer.zero_grad()
             model.train()
@@ -189,12 +191,12 @@ def inner_trainer(rank, world_size, args):
                 for k in Dict:
                     if hasattr(Dict[k], "cuda"):
                         Dict[k] = Dict[k].to(rank)
-            aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, new_emb = model.forward(
+            aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, new_emb, mask = model.forward(
                 aa_data, mol_data, aa_neighbor_data)
             with torch.no_grad():
                 model_ema.eval()
-                old_emb=model_ema.forward(aa_data, mol_data, aa_neighbor_data)[-1]
-            st_loss= ((1 - ( torch.nn.functional.normalize(old_emb, p=2, dim=-1) *  torch.nn.functional.normalize(new_emb, p=2, dim=-1)).sum(dim=-1)).pow_(3)).mean()
+                old_aa_pseudo_emb, _, _, _, old_emb, _=model_ema.forward(aa_data, mol_data, aa_neighbor_data, mask=None)
+            st_loss= ((1 - ( torch.nn.functional.normalize(old_emb, p=2, dim=-1) *  torch.nn.functional.normalize(new_emb, p=2, dim=-1)).sum(dim=-1)).pow_(3)).mean()+((1 - ( torch.nn.functional.normalize(old_aa_pseudo_emb, p=2, dim=-1) *  torch.nn.functional.normalize(aa_pseudo_emb, p=2, dim=-1)).sum(dim=-1)).pow_(3)).mean()
             # reduce to one device
             all_aa_pseudo_emb=aa_pseudo_emb#pairwise_sync(aa_pseudo_emb)      
             all_neighbor_pseudo_emb=neighbor_pseudo_emb#pairwise_sync(neighbor_pseudo_emb)      
@@ -206,7 +208,7 @@ def inner_trainer(rank, world_size, args):
             
             loss =aa_contrastive_loss+rec_loss+similarity_loss+st_loss
             if args.aba:
-                loss=rec_loss
+                loss=rec_loss+similarity_loss+st_loss
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
             synchronize_gradients(model)
@@ -218,7 +220,8 @@ def inner_trainer(rank, world_size, args):
                 logger.info(
                     f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.item()} ;  train acc { acc.float().sum().item()/len(acc)} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()} ; st loss {st_loss.item()}")
             update(model, model_ema)
-        if epoch%10==0:
+        scheduler.step()
+        if epoch%5==4:
             logger.info(f"Finish training for epoch {epoch}")
             val_aa_l2_loss = 0
             val_mol_l2_loss = 0
@@ -235,7 +238,7 @@ def inner_trainer(rank, world_size, args):
                         for k in Dict:
                             if hasattr(Dict[k], "cuda"):
                                 Dict[k] = Dict[k].to(rank)
-                    aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, _= model.forward(
+                    aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, _, _= model.forward(
                         aa_data, mol_data, aa_neighbor_data)
 
                     all_aa_pseudo_emb=aa_pseudo_emb#pairwise_sync(aa_pseudo_emb)      
