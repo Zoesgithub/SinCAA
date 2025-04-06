@@ -283,7 +283,7 @@ class MolDataset(Dataset):
         mol_data=get_graph(smiles=self.mol_data[mol_idx], max_level=self.num_level)
         nei_data=get_graph(smiles=neighbor_aa, max_level=self.num_level)
         aa_data["sim"]=sim
-        aa_data["index"]=torch.tensor(index)
+        aa_data["index"]=torch.tensor(index).reshape(-1)
         return aa_data, mol_data , nei_data
        
 
