@@ -13,10 +13,10 @@ if __name__=="__main__":
     parser.add_argument("--save_path", type=str, help="Path to save results", default="data/results/")
     
     parser.add_argument("--train_aa_data_path", type=str, help="the path to the train aa data", default="data/AAList/train_aa_with_similarity.csv")
-    parser.add_argument("--train_mol_data_path", type=str, help="the path to train general mol", default="data/ZINC12/train_princeton.clean")
+    parser.add_argument("--train_mol_data_path", type=str, help="the path to train general mol", default="data/ZINC15/train_zinc15_10M_2D.csv")
     
     parser.add_argument("--val_aa_data_path", type=str, help="the path to the val aa data", default="data/AAList/val_aa_with_similarity.csv")
-    parser.add_argument("--val_mol_data_path", type=str, help="the path to val general mol", default="data/ZINC12/val_princeton.clean")
+    parser.add_argument("--val_mol_data_path", type=str, help="the path to val general mol", default="data/ZINC15/val_zinc15_10M_2D.csv")
     
     parser.add_argument("--model_channels", type=int, default=256, help="The number of channels for model")
     parser.add_argument("--num_head", type=int, default=16, help="The number of channels for model")
