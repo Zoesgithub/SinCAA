@@ -53,7 +53,7 @@ class SinCAA(nn.Module):
         self.node_float_embeder = nn.Linear(
             4, args.model_channels)
         self.recovery_info=nn.Linear(args.model_channels, 200)
-        self.feat_dropout_rate=0.5
+        self.feat_dropout_rate=0.6
         self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
         
     def get_num_params(self):
@@ -128,4 +128,4 @@ class SinCAA(nn.Module):
         mol_emb, _, mol_rec_loss, _=self.calculate_topol_emb(mol_data)
         merge_emb=torch.cat([merge_emb, mol_emb], 0)
         #return aa_emb,neigh_emb, aa_rec_loss+mol_rec_loss+neigh_rec_loss, self.out_similarity(torch.cat([aa_emb, neigh_emb], -1)).squeeze(-1)
-        return aa_pseudo_emb,neighbor_pseudo_emb, mol_rec_loss, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), merge_emb
+        return aa_pseudo_emb,neighbor_pseudo_emb, mol_rec_loss+rec_loss, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), merge_emb
