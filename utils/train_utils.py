@@ -141,7 +141,7 @@ def inner_trainer(rank, world_size, args):
     
     
     train_data = MolDataset(aa_path=args.train_aa_data_path,
-                            mol_path=args.train_mol_data_path, cache_path=args.cache_path,world_size=world_size, rank=rank, num_level=args.max_level)
+                            mol_path=args.train_mol_data_path, cache_path=args.cache_path,world_size=world_size, rank=rank, num_level=args.max_level, istrain=True)
     
     valid_data = MolDataset(aa_path=args.val_aa_data_path,
                             mol_path=args.val_mol_data_path,  cache_path=args.cache_path,world_size=world_size, rank=rank, num_level=args.max_level)

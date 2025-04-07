@@ -224,7 +224,7 @@ def merge_aa(mid, num_confs, start=None, end=None):
 
 
 class MolDataset(Dataset):
-    def __init__(self, aa_path, mol_path=None, cache_path=None, num_projection=20, world_size=1, rank=0, num_level=4) -> None:
+    def __init__(self, aa_path, mol_path=None, cache_path=None, num_projection=20, world_size=1, rank=0, num_level=4, istrain=False) -> None:
         super().__init__()
         aa_data = pd.read_csv(aa_path)
         self.aa_smiles = aa_data["SMILES"]
@@ -249,7 +249,7 @@ class MolDataset(Dataset):
         
         mol_step=(len(self.mol_data)+world_size-1)//world_size
         self.mol_index=list(range(len(self.mol_data)))[mol_step*rank:mol_step*rank+mol_step]
-        
+        self.istrain=istrain
         
         
     def build_neighbor_key(self):
@@ -264,6 +264,8 @@ class MolDataset(Dataset):
             
         
     def __len__(self):
+        if not self.istrain:
+            return len(self.index)
         return max(len(self.index), len(self.mol_index))
 
     def __getitem__(self, index):
