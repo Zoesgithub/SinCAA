@@ -102,10 +102,14 @@ class SinCAA(nn.Module):
                 x = conv(x, edge_index, edge_attr=edge_emb,batch=node_residue_index)
         
         ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="mean")
-        recovery_info_loss=0
+        
+        recovery_info=self.recovery_info(self.recover_info_convnet(ret_emb[node_residue_index], edge_index,batch=node_residue_index)).reshape(-1, 2, 100).reshape(-1, 100)
+        l=feats["nodes_int_feats"][..., :2].reshape(-1)
+        recovery_info_loss=(nn.functional.cross_entropy(recovery_info, l)).mean()
+        
         for i in range(3):
             dmask=(torch.rand_like(node_emb[:, :1])<1-self.feat_dropout_rate).float()
-            x_rep=x*dmask
+            x_rep=x*dmask+ret_emb[node_residue_index]*(1-dmask)
             x_rep=self.recover_info_convnet(x_rep, edge_index,batch=node_residue_index)#, edge_attr=x_rep[edge_index[0]]+x_rep[edge_index[1]], batch=node_residue_index)
             recovery_info=self.recovery_info(x_rep[dmask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
             l=feats["nodes_int_feats"][..., :2][dmask.squeeze(-1)<1].reshape(-1)
