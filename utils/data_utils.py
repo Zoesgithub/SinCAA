@@ -238,7 +238,7 @@ class MolDataset(Dataset):
 
         self.cache_path = cache_path
         if mol_path is not None:
-            self.mol_data = pd.read_csv(mol_path, sep=" ")["SMILES"]
+            self.mol_data = pd.read_csv(mol_path)["SMILES"]
         else:
             self.mol_data = None
         self.num_aa = len(self.aa_smiles)
