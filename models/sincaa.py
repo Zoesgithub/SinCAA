@@ -53,7 +53,7 @@ class SinCAA(nn.Module):
         self.node_float_embeder = nn.Linear(
             4, args.model_channels)
         self.recovery_info=nn.Linear(args.model_channels, 200)
-        self.feat_dropout_rate=0.6
+        self.feat_dropout_rate=0.4
         self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
         self.transform_layer=nn.Linear(args.model_channels*args.topological_net_layers, args.model_channels)
         
@@ -86,13 +86,9 @@ class SinCAA(nn.Module):
         
         edge_emb = sum(edge_emb_list)/len(edge_emb_list)
         assert edge_emb.shape[0] == edge_index.shape[1]
-        if mask is None:
-            if self.training:
-                mask=(torch.rand_like(node_emb[:, :1])<1-self.feat_dropout_rate).float()
-            else:
-                mask=torch.zeros_like(node_emb[:, :1])+1
+            
         # gps forward
-        x = node_emb*mask
+        x = node_emb
         inpx=x
         assert edge_index.max()==x.shape[0]-1
         assert edge_index.shape[-1]==0 or edge_index.max()<len(x), f"{edge_index.max} {x.shape}"
@@ -102,23 +98,28 @@ class SinCAA(nn.Module):
 
         else:
             for conv in self.topological_net:
+                if self.training:
+                    mask=(torch.rand_like(node_emb[:, :1])<1-self.feat_dropout_rate).float()
+                else:
+                    mask=torch.zeros_like(node_emb[:, :1])+1
+                x=x*mask
                 x = conv(x, edge_index, edge_attr=edge_emb,batch=node_residue_index)
                 xs.append(x)
         x=self.transform_layer(torch.cat(xs, -1))
         ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="mean")
         
-        recovery_info=self.recovery_info(self.recover_info_convnet(ret_emb[node_residue_index], edge_index,batch=node_residue_index)).reshape(-1, 2, 100).reshape(-1, 100)
-        l=feats["nodes_int_feats"][..., :2].reshape(-1)
-        recovery_info_loss=(nn.functional.cross_entropy(recovery_info, l)).mean()
+        #recovery_info=self.recovery_info(self.recover_info_convnet(ret_emb[node_residue_index], edge_index,batch=node_residue_index)).reshape(-1, 2, 100).reshape(-1, 100)
+        #l=feats["nodes_int_feats"][..., :2].reshape(-1)
+        recovery_info_loss=0#(nn.functional.cross_entropy(recovery_info, l)).mean()
         
         for i in range(3):
             dmask=(torch.rand_like(node_emb[:, :1])<1-self.feat_dropout_rate).float()
-            x_rep=x*dmask+ret_emb[node_residue_index]*(1-dmask)
-            x_rep=self.recover_info_convnet(x_rep, edge_index,batch=node_residue_index)#, edge_attr=x_rep[edge_index[0]]+x_rep[edge_index[1]], batch=node_residue_index)
+            x_rep=x*dmask
+            x_rep=self.recover_info_convnet(x_rep, edge_index,batch=node_residue_index)
             recovery_info=self.recovery_info(x_rep[dmask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
             l=feats["nodes_int_feats"][..., :2][dmask.squeeze(-1)<1].reshape(-1)
             recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l)).mean()
-        return x, ret_emb, recovery_info_loss, mask
+        return x, ret_emb, recovery_info_loss, None
     
 
     def inner_forward(self, data):
@@ -135,7 +136,7 @@ class SinCAA(nn.Module):
         neighbor_pseudo_emb=emb[na:]'''
         mol_emb, _, mol_rec_loss, _=self.calculate_topol_emb(mol_data)
         aa_emb, aa_pseudo_emb, aa_rec_loss, _=self.calculate_topol_emb(aa_data)
-        neighbor_emb, neighbor_pseudo_emb, neigh_rec_loss, _=self.calculate_topol_emb(aa_data)
+        neighbor_emb, neighbor_pseudo_emb, neigh_rec_loss, _=self.calculate_topol_emb(neighbor_data)
         merge_emb=torch.cat([aa_emb, neighbor_emb, mol_emb], 0)
         #return aa_emb,neigh_emb, aa_rec_loss+mol_rec_loss+neigh_rec_loss, self.out_similarity(torch.cat([aa_emb, neigh_emb], -1)).squeeze(-1)
         return aa_pseudo_emb,neighbor_pseudo_emb, mol_rec_loss+aa_rec_loss+neigh_rec_loss, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), merge_emb

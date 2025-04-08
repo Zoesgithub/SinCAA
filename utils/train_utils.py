@@ -246,7 +246,7 @@ def inner_trainer(rank, world_size, args):
                     f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.item()} ;  train acc { acc.float().sum().item()/len(acc)} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()} ;")
             #update(model, model_ema)
         scheduler.step()
-        if epoch%5==4:
+        if True:
             logger.info(f"Finish training for epoch {epoch}")
             val_aa_l2_loss = 0
             val_mol_l2_loss = 0
