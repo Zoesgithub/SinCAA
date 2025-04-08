@@ -228,7 +228,10 @@ def inner_trainer(rank, world_size, args):
             val_num = 0
 
             for i, d in enumerate(valid_data_loader):
-                model.eval()
+                if args.aba: # aba mode, eval with rec loss
+                    model.train()
+                else:
+                    model.eval()
                 with torch.no_grad():
                     aa_data, mol_data, aa_neighbor_data = d
 
