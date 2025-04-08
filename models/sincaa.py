@@ -56,6 +56,11 @@ class SinCAA(nn.Module):
         self.feat_dropout_rate=0.4
         self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
         self.transform_layer=nn.Linear(args.model_channels*args.topological_net_layers, args.model_channels)
+        if not args.aba:
+            self.emb_layer=nn.Linear(args.model_channels, 32)
+            self.out_similarity=nn.Sequential(nn.Linear(32*2, 1), nn.Sigmoid())
+        else:
+            self.emb_layer=None
         
     def get_num_params(self):
         total=sum(p.numel() for p in self.parameters())
@@ -107,7 +112,8 @@ class SinCAA(nn.Module):
                 xs.append(x)
         x=self.transform_layer(torch.cat(xs, -1))
         ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="mean")
-        
+        if self.emb_layer is not None:
+            ret_emb=self.emb_layer(ret_emb)
         #recovery_info=self.recovery_info(self.recover_info_convnet(ret_emb[node_residue_index], edge_index,batch=node_residue_index)).reshape(-1, 2, 100).reshape(-1, 100)
         #l=feats["nodes_int_feats"][..., :2].reshape(-1)
         recovery_info_loss=0#(nn.functional.cross_entropy(recovery_info, l)).mean()
