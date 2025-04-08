@@ -233,7 +233,7 @@ def inner_trainer(rank, world_size, args):
             
             loss =aa_contrastive_loss+rec_loss+similarity_loss#+st_loss
             if args.aba:
-                loss=rec_loss+similarity_loss#+st_loss
+                loss=rec_loss
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
             synchronize_gradients(model)
