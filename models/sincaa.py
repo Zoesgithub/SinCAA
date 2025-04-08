@@ -16,7 +16,6 @@ def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm"):
 
         convs.append(gnn.GPSConv(channels, gnn.GINEConv(net), heads=num_head,
                                  attn_type=attn_type, norm=norm, act="PReLU"))
-        #convs.append(gnn.GINEConv(net))
     return convs
 
 def construct_gin(num_layers, channels):
@@ -42,7 +41,6 @@ class SinCAA(nn.Module):
         else:
             self.topological_net=construct_gps(args.topological_net_layers, args.model_channels, num_head=args.num_head, attn_type="multihead", norm=args.norm)
             self.model="GPS"
-        #self.recover_info_convnet=gnn.models.GIN(args.model_channels, args.model_channels, 1)
         
         self.node_int_embeder = nn.ModuleList([nn.Embedding(
             100, args.model_channels) for _ in range(3)])
@@ -56,11 +54,6 @@ class SinCAA(nn.Module):
         self.feat_dropout_rate=0.4
         self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
         self.transform_layer=nn.Linear(args.model_channels*args.topological_net_layers, args.model_channels)
-        if not args.aba:
-            self.emb_layer=nn.Linear(args.model_channels, 32)
-            self.out_similarity=nn.Sequential(nn.Linear(32*2, 1), nn.Sigmoid())
-        else:
-            self.emb_layer=None
         
     def get_num_params(self):
         total=sum(p.numel() for p in self.parameters())
@@ -115,9 +108,8 @@ class SinCAA(nn.Module):
                 recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l, reduce=False)).sum()/max(recovery_info.shape[0], 1)
                 xs.append(x)
         x=self.transform_layer(torch.cat(xs, -1))
-        ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="mean")
-        if self.emb_layer is not None:
-            ret_emb=self.emb_layer(ret_emb)
+        ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="sum")
+        
         recovery_info=self.recovery_info(x).reshape(-1, 2, 100).reshape(-1, 100)
         l=feats["nodes_int_feats"][..., :2].reshape(-1)
         recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l, reduce=False)).sum()/max(recovery_info.shape[0], 1)
@@ -140,5 +132,4 @@ class SinCAA(nn.Module):
         aa_emb, aa_pseudo_emb, aa_rec_loss, _=self.calculate_topol_emb(aa_data)
         neighbor_emb, neighbor_pseudo_emb, neigh_rec_loss, _=self.calculate_topol_emb(neighbor_data)
         merge_emb=torch.cat([aa_emb, neighbor_emb, mol_emb], 0)
-        #return aa_emb,neigh_emb, aa_rec_loss+mol_rec_loss+neigh_rec_loss, self.out_similarity(torch.cat([aa_emb, neigh_emb], -1)).squeeze(-1)
         return aa_pseudo_emb,neighbor_pseudo_emb, mol_rec_loss+aa_rec_loss+neigh_rec_loss, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), merge_emb
