@@ -168,7 +168,7 @@ def inner_trainer(rank, world_size, args):
     val_loss = 99999
     train_map_between_neighbors=train_data.build_neighbor_key()
     val_map_between_neighbors=valid_data.build_neighbor_key()
-    if args.topological_net_layers>1:
+    '''if args.topological_net_layers>1:
         topological_net_layers=args.topological_net_layers
         args.topological_net_layers=1
         model_ema=torch.nn.SyncBatchNorm.convert_sync_batchnorm(SinCAA(args).to(rank))
@@ -189,7 +189,7 @@ def inner_trainer(rank, world_size, args):
             ema_optimizer.step()
             if i%20==0:
                 print(i, ema_rec_loss)
-        model_ema.eval() 
+        model_ema.eval() '''
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
     
     scheduler = lambda epoch :( 1 + np.cos((epoch) * np.pi / args.num_epochs) ) * 0.5
@@ -216,12 +216,12 @@ def inner_trainer(rank, world_size, args):
                         Dict[k] = Dict[k].to(rank)
             aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, new_emb = model.forward(
                 aa_data, mol_data, aa_neighbor_data)
-            if args.topological_net_layers>1:
+            '''if args.topological_net_layers>1:
                 with torch.no_grad():
                     _, _, ema_rec_loss, _, ema_emb=model_ema.forward(aa_data, mol_data, aa_neighbor_data)
                 st_loss= ((1 - ( torch.nn.functional.normalize(ema_emb.detach(), p=2, dim=-1) *  torch.nn.functional.normalize(new_emb, p=2, dim=-1)).sum(dim=-1)).pow_(3)).mean()
             else:
-                st_loss=torch.tensor(0).to(aa_pseudo_emb.device)
+                st_loss=torch.tensor(0).to(aa_pseudo_emb.device)'''
             # reduce to one device
             all_aa_pseudo_emb=aa_pseudo_emb
             all_neighbor_pseudo_emb=neighbor_pseudo_emb
@@ -231,9 +231,9 @@ def inner_trainer(rank, world_size, args):
             assert aa_data["sim"].shape==similarity.shape
             similarity_loss=-(torch.log(similarity.clamp(1e-6))*aa_data["sim"]+torch.log((1-similarity).clamp(1e-6))*(1-aa_data["sim"])).mean()
             
-            loss =aa_contrastive_loss+rec_loss+similarity_loss+st_loss
+            loss =aa_contrastive_loss+rec_loss+similarity_loss#+st_loss
             if args.aba:
-                loss=rec_loss+similarity_loss+st_loss
+                loss=rec_loss+similarity_loss#+st_loss
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
             synchronize_gradients(model)
@@ -243,7 +243,7 @@ def inner_trainer(rank, world_size, args):
                 exit()
             if i % args.logger_step == 0 and rank==0:
                 logger.info(
-                    f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.item()} ;  train acc { acc.float().sum().item()/len(acc)} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()} ; st loss {st_loss.item()};")
+                    f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.item()} ;  train acc { acc.float().sum().item()/len(acc)} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()} ;")
             #update(model, model_ema)
         scheduler.step()
         if epoch%5==4:
