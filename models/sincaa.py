@@ -112,7 +112,7 @@ class SinCAA(nn.Module):
                 x = conv(x, edge_index, edge_attr=edge_emb,batch=node_residue_index)
                 recovery_info=self.recovery_info(x[mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
                 l=feats["nodes_int_feats"][..., :2][mask.squeeze(-1)<1].reshape(-1)
-                recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l)).mean()
+                recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l)).sum()/max(recovery_info.shape[0], 1)
                 xs.append(x)
         x=self.transform_layer(torch.cat(xs, -1))
         ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="mean")
@@ -120,7 +120,7 @@ class SinCAA(nn.Module):
             ret_emb=self.emb_layer(ret_emb)
         recovery_info=self.recovery_info(x).reshape(-1, 2, 100).reshape(-1, 100)
         l=feats["nodes_int_feats"][..., :2].reshape(-1)
-        recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l)).mean()
+        recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l)).sum()/max(recovery_info.shape[0], 1)
         return x, ret_emb, recovery_info_loss, None
     
 
