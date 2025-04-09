@@ -116,7 +116,7 @@ class SinCAA(nn.Module):
     
         ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="sum")
         dx_loss=((x-local_x.detach())**2).sum(-1).sqrt().mean()
-        return x, ret_emb, recovery_info_loss+dx_loss, None
+        return x, ret_emb, recovery_info_loss, dx_loss
     
 
     def inner_forward(self, data):
@@ -131,8 +131,8 @@ class SinCAA(nn.Module):
         na=aa_data["node_residue_index"].max()+1
         aa_pseudo_emb=emb[:na]
         neighbor_pseudo_emb=emb[na:]'''
-        mol_emb, _, mol_rec_loss, _=self.calculate_topol_emb(mol_data)
-        aa_emb, aa_pseudo_emb, aa_rec_loss, _=self.calculate_topol_emb(aa_data)
-        neighbor_emb, neighbor_pseudo_emb, neigh_rec_loss, _=self.calculate_topol_emb(neighbor_data)
+        mol_emb, _, mol_rec_loss, mol_dx_loss=self.calculate_topol_emb(mol_data)
+        aa_emb, aa_pseudo_emb, aa_rec_loss, aa_dx_loss=self.calculate_topol_emb(aa_data)
+        neighbor_emb, neighbor_pseudo_emb, neigh_rec_loss, neigh_dx_loss=self.calculate_topol_emb(neighbor_data)
         merge_emb=torch.cat([aa_emb, neighbor_emb, mol_emb], 0)
-        return aa_pseudo_emb,neighbor_pseudo_emb, mol_rec_loss+aa_rec_loss+neigh_rec_loss, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), merge_emb
+        return aa_pseudo_emb,neighbor_pseudo_emb, mol_rec_loss+aa_rec_loss+neigh_rec_loss, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), mol_dx_loss+aa_dx_loss+neigh_dx_loss

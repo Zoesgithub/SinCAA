@@ -192,7 +192,7 @@ def inner_trainer(rank, world_size, args):
                 for k in Dict:
                     if hasattr(Dict[k], "cuda"):
                         Dict[k] = Dict[k].to(rank)
-            aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, new_emb = model.forward(
+            aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, dx_loss = model.forward(
                 aa_data, mol_data, aa_neighbor_data)
           
             # reduce to one device
@@ -204,7 +204,7 @@ def inner_trainer(rank, world_size, args):
             assert aa_data["sim"].shape==similarity.shape
             similarity_loss=-(torch.log(similarity.clamp(1e-6))*aa_data["sim"]+torch.log((1-similarity).clamp(1e-6))*(1-aa_data["sim"])).mean()+(torch.log(aa_data["sim"].clamp(1e-6))*aa_data["sim"]+torch.log((1-aa_data["sim"]).clamp(1e-6))*(1-aa_data["sim"])).mean()
             
-            loss =aa_contrastive_loss+rec_loss*10+similarity_loss
+            loss =aa_contrastive_loss+rec_loss*10+similarity_loss+dx_loss*1e-4
             if args.aba:
                 loss=rec_loss
             loss.backward()
@@ -216,7 +216,7 @@ def inner_trainer(rank, world_size, args):
                 exit()
             if i % args.logger_step == 0 and rank==0:
                 logger.info(
-                    f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.item()} ;  train acc { acc.float().sum().item()/len(acc)} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()} ;")
+                    f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.item()} ;  train acc { acc.float().sum().item()/len(acc)} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()} ; dx loss {dx_loss.item()}")
             
         scheduler.step()
         if True:
