@@ -92,6 +92,7 @@ class SinCAA(nn.Module):
         assert edge_index.shape[-1]==0 or edge_index.max()<len(x), f"{edge_index.max} {x.shape}"
         xs=[]
         recovery_info_loss=0
+        
         if self.model=="GAT":
             x=self.topological_net(x, edge_index,  edge_attr=edge_emb,batch=node_residue_index)
 
@@ -107,7 +108,9 @@ class SinCAA(nn.Module):
                 l=feats["nodes_int_feats"][..., :2][mask.squeeze(-1)<1].reshape(-1)
                 recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l, reduce=False)).sum()/max(recovery_info.shape[0], 1)
                 xs.append(x)
+        x=sum(xs)
         #x=self.transform_layer(torch.cat(xs, -1))
+        
         ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="sum")
         
         #recovery_info=self.recovery_info(x).reshape(-1, 2, 100).reshape(-1, 100)
