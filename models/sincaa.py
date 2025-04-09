@@ -103,7 +103,7 @@ class SinCAA(nn.Module):
         xs=[]
         recovery_info_loss=0
         mask, edge_mask=self.generate_mask(x, edge_index)
-        x=self.local_info_net(x*mask, edge_index, edge_attr=edge_emb*edge_mask[..., None])
+        x=self.local_info_net(x*mask, edge_index, edge_attr=edge_emb*edge_mask)
         local_x=x
         if self.model=="GAT":
             x=self.topological_net(x, edge_index,  edge_attr=edge_emb,batch=node_residue_index)
@@ -112,14 +112,14 @@ class SinCAA(nn.Module):
             for conv in self.topological_net:
                 mask, edge_mask=self.generate_mask(x, edge_index)
                 x=x*mask
-                x = conv(x, edge_index, edge_attr=edge_emb*edge_mask[..., None],batch=node_residue_index)+x
+                x = conv(x, edge_index, edge_attr=edge_emb*edge_mask,batch=node_residue_index)+x
                 recovery_info=self.recovery_info(x[mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
                 l=feats["nodes_int_feats"][..., :2][mask.squeeze(-1)<1].reshape(-1)
                 recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l, reduce=False)).sum()/max(recovery_info.shape[0], 1)
                 
                 # recovery edge
-                edge_recover_info=self.edge_recovery_info((x[edge_index[0]]+x[edge_index[1]])[edge_mask<1]).reshape(-1, 2, 100).reshape(-1, 100)
-                edge_l=edge_feats[edge_mask<1].reshape(-1)
+                edge_recover_info=self.edge_recovery_info((x[edge_index[0]]+x[edge_index[1]])[edge_mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
+                edge_l=edge_feats[edge_mask.squeeze(-1)<1].reshape(-1)
                 recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(edge_recover_info, edge_l, reduce=False)).sum()/max(edge_recover_info.shape[0], 1)
 
     
