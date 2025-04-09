@@ -52,6 +52,7 @@ class SinCAA(nn.Module):
         self.node_float_embeder = nn.Linear(
             4, args.model_channels)
         self.recovery_info=nn.Linear(args.model_channels, 200)
+        self.edge_recovery_info=nn.Linear(args.model_channels, 200)
         self.feat_dropout_rate=0.4
         self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
         self.transform_layer=nn.Linear(args.model_channels*args.topological_net_layers, args.model_channels)
@@ -60,6 +61,14 @@ class SinCAA(nn.Module):
         total=sum(p.numel() for p in self.parameters())
         topological_net=sum(p.numel() for p in self.topological_net.parameters())
         return {"total":total, "topological_net":topological_net}
+    
+    def generate_mask(self, node_emb, edges):
+        if self.training:
+            mask=(torch.rand_like(node_emb[:, :1])<1-self.feat_dropout_rate).float()
+        else:
+            mask=torch.zeros_like(node_emb[:, :1])+1
+        edge_mask=((mask[edges[0]]+mask[edges[1]])==2).float()
+        return mask, edge_mask
 
     def calculate_topol_emb(self, feats, mask=None):
         node_int_feats = feats["nodes_int_feats"]
@@ -93,26 +102,26 @@ class SinCAA(nn.Module):
         assert edge_index.shape[-1]==0 or edge_index.max()<len(x), f"{edge_index.max} {x.shape}"
         xs=[]
         recovery_info_loss=0
-        if self.training:
-            mask=(torch.rand_like(node_emb[:, :1])<1-self.feat_dropout_rate).float()
-        else:
-            mask=torch.zeros_like(node_emb[:, :1])+1
-        x=self.local_info_net(x*mask, edge_index, edge_attr=edge_emb)
+        mask, edge_mask=self.generate_mask(x, edge_index)
+        x=self.local_info_net(x*mask, edge_index, edge_attr=edge_emb*edge_mask[..., None])
         local_x=x
         if self.model=="GAT":
             x=self.topological_net(x, edge_index,  edge_attr=edge_emb,batch=node_residue_index)
 
         else:
             for conv in self.topological_net:
-                if self.training:
-                    mask=(torch.rand_like(node_emb[:, :1])<1-self.feat_dropout_rate).float()
-                else:
-                    mask=torch.zeros_like(node_emb[:, :1])+1
+                mask, edge_mask=self.generate_mask(x, edge_index)
                 x=x*mask
-                x = conv(x, edge_index, edge_attr=edge_emb,batch=node_residue_index)+x
+                x = conv(x, edge_index, edge_attr=edge_emb*edge_mask[..., None],batch=node_residue_index)+x
                 recovery_info=self.recovery_info(x[mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
                 l=feats["nodes_int_feats"][..., :2][mask.squeeze(-1)<1].reshape(-1)
                 recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l, reduce=False)).sum()/max(recovery_info.shape[0], 1)
+                
+                # recovery edge
+                edge_recover_info=self.edge_recovery_info((x[edge_index[0]]+x[edge_index[1]])[edge_mask<1]).reshape(-1, 2, 100).reshape(-1, 100)
+                edge_l=edge_feats[edge_mask<1].reshape(-1)
+                recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(edge_recover_info, edge_l, reduce=False)).sum()/max(edge_recover_info.shape[0], 1)
+
     
         ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="sum")
         dx_loss=(abs(x-local_x.detach())).sum(-1).mean()
