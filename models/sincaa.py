@@ -115,7 +115,7 @@ class SinCAA(nn.Module):
                 recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l, reduce=False)).sum()/max(recovery_info.shape[0], 1)
     
         ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="sum")
-        dx_loss=((x-local_x.detach())**2).sum(-1).sqrt().mean()
+        dx_loss=(abs(x-local_x.detach())).sum(-1).mean()
         return x, ret_emb, recovery_info_loss, dx_loss
     
 
