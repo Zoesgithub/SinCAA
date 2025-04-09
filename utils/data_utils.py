@@ -223,6 +223,40 @@ def merge_aa(mid, num_confs, start=None, end=None):
     return ret
 
 
+def merge_aa_withoutconf(mid, start):
+    start_mol = Chem.AddHs(Chem.MolFromSmiles(start))
+    mid_mol = Chem.AddHs(Chem.MolFromSmiles(mid))
+    
+    start_match_pattern = start_mol.GetSubstructMatches(
+        Chem.MolFromSmarts(aa_pattern))
+    mid_match_pattern = mid_mol.GetSubstructMatches(
+        Chem.MolFromSmarts(aa_pattern))
+
+    assert len(start_match_pattern) > 0, start_match_pattern
+    assert len(mid_match_pattern) > 0, mid_match_pattern
+
+    start_match_pattern = random.choice(start_match_pattern)
+    mid_match_pattern = random.choice(mid_match_pattern)
+    emol = Chem.EditableMol(Chem.Mol())
+    startN, startCA, startCO, _, startOH = start_match_pattern
+    midN, midCA, midCO, _, midOH = mid_match_pattern
+
+    start_exclude_atoms = [get_idx_of_H(
+        start_mol.GetAtomWithIdx(startOH)), startOH]
+    start_map = add_mol_to_emol(emol, start_mol, start_exclude_atoms)
+
+    mid_exclude_atoms = [get_idx_of_H(mid_mol.GetAtomWithIdx(midN))]
+    mid_map = add_mol_to_emol(emol, mid_mol, mid_exclude_atoms)
+
+    b1 = emol.AddBond(
+        start_map[startCO], mid_map[midN], order=Chem.rdchem.BondType.SINGLE)
+
+    mol = emol.GetMol()
+    Chem.SanitizeMol(mol)
+        
+    return mol, start_map, mid_map
+
+
 class MolDataset(Dataset):
     def __init__(self, aa_path, mol_path=None, cache_path=None, num_projection=20, world_size=1, rank=0, num_level=4, istrain=False) -> None:
         super().__init__()
@@ -250,6 +284,7 @@ class MolDataset(Dataset):
         mol_step=(len(self.mol_data)+world_size-1)//world_size
         self.mol_index=list(range(len(self.mol_data)))[mol_step*rank:mol_step*rank+mol_step]
         self.istrain=istrain
+        self.max_length=3
         
         
     def build_neighbor_key(self):
@@ -287,12 +322,64 @@ class MolDataset(Dataset):
         aa_data["index"]=torch.tensor(index).reshape(-1)
         return aa_data, mol_data , nei_data
        
+       
+class ChainDataset(MolDataset):
+    def __getitem__(self, index):
+        mol_idx=self.mol_index[index%len(self.mol_index)]
+        index=self.index[index%len(self.index)]
+        mid_aa = self.aa_smiles[index]
+        neighbors = self.aa_neighbors[index].split(";")
+        assert len(neighbors) > 0
+        idx=random.randint(0, len(neighbors)-1)
+        neighbor_aa = neighbors[idx]
+        sim=float(self.aa_similarity[index].split(";")[idx])
+        if sim==0:
+            print(self.aa_similarity[index], mid_aa)
+        def remove_last_atom(data):
+            ret={
+                "nodes_int_feats":data["nodes_int_feats"][:-1],
+                "nodes_float_feats":data["nodes_float_feats"][:-1],
+                "edge_attrs":data["edge_attrs"],
+                "edges":data["edges"],
+            }
+            return ret
+            
+        sims=[sim]
+        indexs=[index]
+        aa_data=[get_graph(smiles=mid_aa, max_level=self.num_level)]
+        nei_data=[get_graph(smiles=neighbor_aa, max_level=self.num_level)]
+        num_added_aa=random.randint(0, self.max_length)
+        while num_added_aa>0:
+            num_added_aa-=1
+            aa_data[-1]=remove_last_atom(aa_data[-1])
+            nei_data[-1]=remove_last_atom(nei_data[-1])
+            idx=self.index[random.randint(0, len(self.index)-1)]
+            neighbors = self.aa_neighbors[idx].split(";")
+            nidx=random.randint(0, len(neighbors)-1)
+            aa_data.append(get_graph(smiles=self.aa_smiles[idx], max_level=self.num_level))
+            nei_data.append(get_graph(smiles=neighbors[nidx], max_level=self.num_level))
+            sims.append(float(self.aa_similarity[idx].split(";")[nidx]))
+            indexs.append(idx)
+            
+            
+        mol_data=get_graph(smiles=self.mol_data[mol_idx], max_level=self.num_level)
+        
+        aa_data, nei_data=collate_fn([[a,b] for a,b in zip(aa_data,nei_data)])
+       
+        aa_data["sim"]=torch.tensor(sims).reshape(-1)
+        aa_data["index"]=torch.tensor(indexs).reshape(-1)
+        
+        aa_data["batch_id"]=np.zeros(len(aa_data["nodes_int_feats"]), dtype=int)
+        nei_data["batch_id"]=np.zeros(len(nei_data["nodes_int_feats"]), dtype=int)
+        mol_data["batch_id"]=np.zeros(len(mol_data["nodes_int_feats"]), dtype=int)
+        return aa_data, mol_data , nei_data
+
 
 
 def collate_fn(batch):
     increase_key = ["edges", "pseudo_backbone_atoms",
                      "pseudo_node_index", "defined_torsion_angle", "local_frame_indicator", "other_edges",]
-    increase_node_key=[ "permutation"]
+    increase_node_key=["batch_id"]
     
     def merge_part_info(part_info):
         num_part_info=len(part_info[0])
@@ -316,7 +403,6 @@ def collate_fn(batch):
     def merge_sub_group(idx):
         group = [_[idx] for _ in batch]
         num_node = 0
-        num_raw_node=0
         ret = {"node_residue_index": []}
         #part_info=merge_part_info([_["part_info"] for _ in group])
         #[_.pop("part_info") for _ in group]
@@ -337,30 +423,26 @@ def collate_fn(batch):
                     ret[k].append(g[k]+num_node)
                     ret[k][-1][g[k]<0]=-1
                 elif k in increase_node_key:
+                    num_raw_node=ret[k][-1].max()+1
                     ret[k].append(g[k]+num_raw_node)
-                    ret[k][-1][g[k]<0]=-1
                 else:
                     if k=="node_residue_index":
                         ret[k].append(g[k]+num_residue)
                     else:
                         ret[k].append(g[k])
             num_node += len(g["nodes_int_feats"])
-            num_raw_node += len(g["nodes_int_feats"])-1
+            
             if "node_residue_index" not in g:
                 ret["node_residue_index"].append(
-                    torch.zeros(len(g["nodes_int_feats"])).long()+i)
-            else:
-                num_residue=num_residue+g["node_residue_index"].max()+1
-            if "local_frame_indicator" in g:
-                if "ori_local_frame_indicator" not in ret:
-                    ret["ori_local_frame_indicator"]=[]
-                ret["ori_local_frame_indicator"].append(g["local_frame_indicator"])
+                    torch.zeros(len(g["nodes_int_feats"])).long()+num_residue)
+            num_residue=ret["node_residue_index"][-1].max()+1
+            
         for k in ret:
             ret[k] = torch.cat(ret[k], 0)
-        edge_filter=ret["edges"]
-        edge_filter=(edge_filter[..., 0]<num_node)&(edge_filter[..., 1]<num_node)
-        ret["edges"] = ret["edges"][edge_filter].transpose(1, 0)
-        ret["edge_attrs"]=ret["edge_attrs"][edge_filter]
+        #edge_filter=ret["edges"]
+        #edge_filter=(edge_filter[..., 0]<num_node)&(edge_filter[..., 1]<num_node)
+        ret["edges"] = ret["edges"].transpose(1, 0)
+        #ret["edge_attrs"]=ret["edge_attrs"]#[edge_filter]
         #ret["part_info"]=part_info
         return ret
     ret = [merge_sub_group(i) for i in range(len(batch[0]))]

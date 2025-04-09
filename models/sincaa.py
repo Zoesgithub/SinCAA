@@ -77,7 +77,11 @@ class SinCAA(nn.Module):
         edge_feats = feats["edge_attrs"]
         edge_index = feats["edges"]
         node_residue_index=feats["node_residue_index"]
-
+        if "batch_id" in feats:
+            batch_id=feats["batch_id"].long()
+        else:
+            batch_id=node_residue_index
+       
         assert edge_index.shape[1] == edge_feats.shape[0], f"{edge_index.shape} {edge_feats.shape}"
         assert edge_index.shape[0] == 2, edge_index.shape
         assert node_int_feats.shape[-1]==3
@@ -105,14 +109,18 @@ class SinCAA(nn.Module):
         mask, edge_mask=self.generate_mask(x, edge_index)
         x=self.local_info_net(x*mask, edge_index, edge_attr=edge_emb*edge_mask)
         local_x=x
+        dx_loss=0
         if self.model=="GAT":
-            x=self.topological_net(x, edge_index,  edge_attr=edge_emb,batch=node_residue_index)
+            x=self.topological_net(x, edge_index,  edge_attr=edge_emb,batch=batch_id)
 
         else:
             for conv in self.topological_net:
                 mask, edge_mask=self.generate_mask(x, edge_index)
                 x=x*mask
-                x = conv(x, edge_index, edge_attr=edge_emb*edge_mask,batch=node_residue_index)+x
+                
+                assert len(x)==len(batch_id), f"{x.shape}{batch_id.shape}"
+                assert len(edge_emb)==edge_index.shape[-1], f"{edge_emb.shape}{edge_index.shape}"
+                x = conv(x, edge_index, edge_attr=edge_emb*edge_mask,batch=batch_id)+x
                 recovery_info=self.recovery_info(x[mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
                 l=feats["nodes_int_feats"][..., :2][mask.squeeze(-1)<1].reshape(-1)
                 recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l, reduce=False)).sum()/max(recovery_info.shape[0], 1)
@@ -121,10 +129,10 @@ class SinCAA(nn.Module):
                 edge_recover_info=self.edge_recovery_info((x[edge_index[0]]+x[edge_index[1]])[edge_mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
                 edge_l=edge_feats[edge_mask.squeeze(-1)<1].reshape(-1)
                 recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(edge_recover_info, edge_l, reduce=False)).sum()/max(edge_recover_info.shape[0], 1)
-
+                dx_loss=(abs(x-local_x)).sum(-1).mean()+dx_loss
     
         ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="sum")
-        dx_loss=(abs(x-local_x.detach())).sum(-1).mean()
+        
         return x, ret_emb, recovery_info_loss, dx_loss
     
 
@@ -135,7 +143,9 @@ class SinCAA(nn.Module):
      
 
     def forward(self, aa_data, mol_data, neighbor_data):
+        
         merge_feat=collate_fn([[aa_data], [neighbor_data], [mol_data]])[0]
+        
         merge_emb, emb, rec_loss, dx_loss= self.calculate_topol_emb(merge_feat)
         na=aa_data["node_residue_index"].max()+1
         aa_pseudo_emb=emb[:na]

@@ -1,5 +1,5 @@
 import torch
-from utils.data_utils import MolDataset, collate_fn
+from utils.data_utils import MolDataset,ChainDataset, collate_fn
 from torch.utils.data import DataLoader, DistributedSampler
 from models.sincaa import SinCAA
 import torch.nn.functional as F
@@ -139,10 +139,10 @@ def inner_trainer(rank, world_size, args):
     
     
     
-    train_data = MolDataset(aa_path=args.train_aa_data_path,
+    train_data = ChainDataset(aa_path=args.train_aa_data_path,
                             mol_path=args.train_mol_data_path, cache_path=args.cache_path,world_size=world_size, rank=rank, num_level=args.max_level, istrain=True)
     
-    valid_data = MolDataset(aa_path=args.val_aa_data_path,
+    valid_data = ChainDataset(aa_path=args.val_aa_data_path,
                             mol_path=args.val_mol_data_path,  cache_path=args.cache_path,world_size=world_size, rank=rank, num_level=args.max_level)
     train_data_loader = DataLoader(
         train_data, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=args.num_workers, shuffle=True, drop_last=True)
@@ -187,7 +187,7 @@ def inner_trainer(rank, world_size, args):
             model.zero_grad()
             model.train()
             aa_data, mol_data, aa_neighbor_data = d
-
+           
             for Dict in [aa_data, mol_data, aa_neighbor_data]:
                 for k in Dict:
                     if hasattr(Dict[k], "cuda"):
