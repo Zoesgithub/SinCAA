@@ -217,6 +217,10 @@ def inner_trainer(rank, world_size, args):
             if i % args.logger_step == 0 and rank==0:
                 logger.info(
                     f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.item()} ;  train acc { acc.float().sum().item()/len(acc)} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()} ; dx loss {dx_loss.item()}")
+            if i%1000==0:
+                torch.save({"state_dict":model.state_dict(), "epoch":epoch}, os.path.join(
+                    save_path, "model.statedict.tmp"))
+                
             
         scheduler.step()
         if True:

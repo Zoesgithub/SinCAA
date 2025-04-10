@@ -59,6 +59,8 @@ def myHash(text: str):
 def add_part_info(feat, max_level):
     num_node=len(feat["nodes_int_feats"])
     edge=feat["edges"]
+    if edge.shape[-1]!=2:
+        edge=edge.transpose(1, 0)
     assert edge.shape[-1]==2, edge.shape
     G=nx.Graph()
     G.add_edges_from(edge.tolist())
@@ -76,14 +78,11 @@ def add_part_info(feat, max_level):
         assert mapped_edge.shape[-1]==2, mapped_edge.shape       
         mapped_edge=mapped_edge[mapped_edge[..., 0]!=mapped_edge[..., 1]]
         remap_v=v.copy()
-        if i>0:
-            # aggr v
-            remap_v=np.zeros(prev_unique_v.max()+1, dtype=int)
-            for j in np.unique(prev_unique_v):
-                remap_v[j]=v[prev_unique_v==j].max()
+        
         part_info.append([remap_v, mapped_edge])
         prev_unique_v=v
     feat["part_info"]=part_info
+    
     return feat
 
 def get_graph(aa_name=None, smiles=None, max_level=4):
@@ -320,7 +319,7 @@ class MolDataset(Dataset):
         nei_data=get_graph(smiles=neighbor_aa, max_level=self.num_level)
         aa_data["sim"]=sim
         aa_data["index"]=torch.tensor(index).reshape(-1)
-        return aa_data, mol_data , nei_data
+        return aa_data, mol_data ,nei_data
        
        
 class ChainDataset(MolDataset):
@@ -372,7 +371,7 @@ class ChainDataset(MolDataset):
         aa_data["batch_id"]=np.zeros(len(aa_data["nodes_int_feats"]), dtype=int)
         nei_data["batch_id"]=np.zeros(len(nei_data["nodes_int_feats"]), dtype=int)
         mol_data["batch_id"]=np.zeros(len(mol_data["nodes_int_feats"]), dtype=int)
-        return aa_data, mol_data , nei_data
+        return add_part_info(aa_data, 3), add_part_info(mol_data, 3) , add_part_info(nei_data, 3)
 
 
 
@@ -387,25 +386,26 @@ def collate_fn(batch):
         for i in range(num_part_info):
             info=[_[i] for _ in part_info]
             minfo=[]
-            einfo=[]
-            binfo=[]
+          
             num_n=0
             for i,v in enumerate(info):
                 minfo.append(v[0]+num_n)
-                einfo.append(v[1]+num_n)
-                assert v[1].shape[-1]==2, v[1].shape
+               
                 num_n+=v[0].max()+1
-                binfo.append(np.zeros(v[0].max()+1, dtype=int)+i)
+               
         
-            ret.append([torch.cat([torch.tensor(_) for _ in minfo], 0), torch.cat([torch.tensor(_) for _ in einfo], 0).transpose(1, 0), torch.cat([torch.tensor(_) for _ in binfo], 0)])
+            ret.append([torch.cat([torch.tensor(_) for _ in minfo], 0)])
         return ret
 
     def merge_sub_group(idx):
         group = [_[idx] for _ in batch]
         num_node = 0
         ret = {"node_residue_index": []}
-        #part_info=merge_part_info([_["part_info"] for _ in group])
-        #[_.pop("part_info") for _ in group]
+        if "part_info" in group[0]:
+            part_info=merge_part_info([_["part_info"] for _ in group])
+            [_.pop("part_info") for _ in group]
+        else:
+            part_info=None
         num_residue=0
         for i, g in enumerate(group):
             for k in g:
@@ -443,7 +443,8 @@ def collate_fn(batch):
         #edge_filter=(edge_filter[..., 0]<num_node)&(edge_filter[..., 1]<num_node)
         ret["edges"] = ret["edges"].transpose(1, 0)
         #ret["edge_attrs"]=ret["edge_attrs"]#[edge_filter]
-        #ret["part_info"]=part_info
+        if part_info is not None:
+            ret["part_info"]=part_info
         return ret
     ret = [merge_sub_group(i) for i in range(len(batch[0]))]
     return ret
