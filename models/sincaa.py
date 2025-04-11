@@ -150,7 +150,7 @@ class SinCAA(nn.Module):
             edge_recover_info=self.edge_recovery_info((tx[edge_index[0]]+tx[edge_index[1]])).reshape(-1, 2, 100).reshape(-1, 100)
             edge_l=edge_feats.reshape(-1)
             recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(edge_recover_info, edge_l, reduce=False)).sum()/max(edge_recover_info.shape[0], 1)
-        return x, ret_emb, recovery_info_loss, recovery_info_loss*0
+        return x, ret_emb, recovery_info_loss
     
 
     def inner_forward(self, data):
@@ -163,7 +163,7 @@ class SinCAA(nn.Module):
         
         merge_feat=collate_fn([[aa_data], [neighbor_data], [mol_data]])[0]
         
-        merge_emb, emb, rec_loss, dx_loss= self.calculate_topol_emb(merge_feat)
+        merge_emb, emb, rec_loss= self.calculate_topol_emb(merge_feat)
         na=aa_data["node_residue_index"].max()+1
         aa_pseudo_emb=emb[:na]
         neighbor_pseudo_emb=emb[na:neighbor_data["node_residue_index"].max()+1+na]
@@ -171,4 +171,4 @@ class SinCAA(nn.Module):
         #aa_emb, aa_pseudo_emb, aa_rec_loss, aa_dx_loss=self.calculate_topol_emb(aa_data)
         #neighbor_emb, neighbor_pseudo_emb, neigh_rec_loss, neigh_dx_loss=self.calculate_topol_emb(neighbor_data)
         #merge_emb=torch.cat([merge_emb, mol_emb], 0)
-        return aa_pseudo_emb,neighbor_pseudo_emb, rec_loss, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), dx_loss
+        return aa_pseudo_emb,neighbor_pseudo_emb, rec_loss, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1)

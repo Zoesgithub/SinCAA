@@ -371,7 +371,7 @@ class ChainDataset(MolDataset):
         aa_data["batch_id"]=np.zeros(len(aa_data["nodes_int_feats"]), dtype=int)
         nei_data["batch_id"]=np.zeros(len(nei_data["nodes_int_feats"]), dtype=int)
         mol_data["batch_id"]=np.zeros(len(mol_data["nodes_int_feats"]), dtype=int)
-        return add_part_info(aa_data, 3), add_part_info(mol_data, 3) , add_part_info(nei_data, 3)
+        return aa_data, mol_data, nei_data
 
 
 
