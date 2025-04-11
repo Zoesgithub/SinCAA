@@ -60,12 +60,12 @@ def construct_gine(num_layers, channels):
 class SinCAA(nn.Module):
     def __init__(self, args) -> None:
         super().__init__()
-        self.decoder=gnn.models.GAT(args.model_channels, args.model_channels, 3)#construct_gps_gin(1, args.model_channels, num_head=1, attn_type="multihead", norm=args.norm)[0]
+        self.decoder=construct_gps_gin(1, args.model_channels, num_head=args.num_head, attn_type="multihead", norm=args.norm)[0]
         if hasattr(args, "model") and args.model=="GAT":
             self.topological_net=gnn.models.GAT(args.model_channels, args.model_channels, args.topological_net_layers)
             self.model="GAT"
         else:
-            self.topological_net=nn.ModuleList([gnn.models.GAT(args.model_channels, args.model_channels, args.topological_net_layers-1), construct_gps(1, args.model_channels, num_head=args.num_head, attn_type="multihead", norm=args.norm)[0]])
+            self.topological_net=construct_gps(args.topological_net_layers, args.model_channels, num_head=args.num_head, attn_type="multihead", norm=args.norm)
             self.model="GPS"
         
         self.node_int_embeder = nn.ModuleList([nn.Embedding(
@@ -91,9 +91,11 @@ class SinCAA(nn.Module):
         topological_net=sum(p.numel() for p in self.topological_net.parameters())
         return {"total":total, "topological_net":topological_net}
     
-    def generate_mask(self, node_emb, edges):
+    def generate_mask(self, node_emb, edges, dropout_rate=None):
+        if dropout_rate is None:
+            dropout_rate=self.feat_dropout_rate
         if self.training:
-            mask=(torch.rand_like(node_emb[:, :1])<1-self.feat_dropout_rate).float()
+            mask=(torch.rand_like(node_emb[:, :1])<1-dropout_rate).float()
         else:
             mask=torch.zeros_like(node_emb[:, :1])+1
         if edges is not None:
@@ -155,7 +157,7 @@ class SinCAA(nn.Module):
         acc=0
         num_round=3
         for i in range(num_round):
-            mask, edge_mask=self.generate_mask(x, edge_index)
+            mask, edge_mask=self.generate_mask(x, edge_index, 0.8)
             tx=x*mask
             tx=self.decoder(tx, edge_index, batch=batch_id)
             recovery_info=self.recovery_info(tx[mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
