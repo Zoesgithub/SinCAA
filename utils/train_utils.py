@@ -192,7 +192,7 @@ def inner_trainer(rank, world_size, args):
                 for k in Dict:
                     if hasattr(Dict[k], "cuda"):
                         Dict[k] = Dict[k].to(rank)
-            aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity= model.forward(
+            aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, pad_acc= model.forward(
                 aa_data, mol_data, aa_neighbor_data)
           
             # reduce to one device
@@ -216,7 +216,7 @@ def inner_trainer(rank, world_size, args):
                 exit()
             if i % args.logger_step == 0 and rank==0:
                 logger.info(
-                    f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.item()} ;  train acc { acc.float().sum().item()/len(acc)} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()} ; ")
+                    f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.item()} ;  train acc { acc.float().sum().item()/len(acc)} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()} ; acc {pad_acc}")
             if i%1000==0 and rank == 0:
                 torch.save({"state_dict":model.state_dict(), "epoch":epoch}, os.path.join(
                     save_path, "model.statedict.tmp"))
@@ -243,7 +243,7 @@ def inner_trainer(rank, world_size, args):
                         for k in Dict:
                             if hasattr(Dict[k], "cuda"):
                                 Dict[k] = Dict[k].to(rank)
-                    aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity= model.forward(
+                    aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, _= model.forward(
                         aa_data, mol_data, aa_neighbor_data)
 
                     all_aa_pseudo_emb=aa_pseudo_emb
