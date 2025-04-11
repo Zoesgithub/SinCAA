@@ -8,26 +8,18 @@ from utils.data_utils import collate_fn
 def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm"):
     convs = nn.ModuleList()
     for _ in range(num_layers):
-        net = nn.Sequential(
-            nn.Linear(channels, channels),
-            nn.PReLU(),
-            nn.Linear(channels, channels),
-        )
+        net = gnn.models.GAT(channels, channels, 2)
 
-        convs.append(gnn.GPSConv(channels, gnn.GINEConv(net), heads=num_head,
+        convs.append(gnn.GPSConv(channels, net, heads=num_head,
                                  attn_type=attn_type, norm=norm, act="PReLU"))
     return convs
 
 def construct_gps_gin(num_layers, channels, attn_type, num_head, norm="GraphNorm"):
     convs = nn.ModuleList()
     for _ in range(num_layers):
-        net = nn.Sequential(
-            nn.Linear(channels, channels),
-            nn.PReLU(),
-            nn.Linear(channels, channels),
-        )
+        net = gnn.models.GAT(channels, channels, 2)
 
-        convs.append(gnn.GPSConv(channels, gnn.GINConv(net), heads=num_head,
+        convs.append(gnn.GPSConv(channels, net, heads=num_head,
                                  attn_type=attn_type, norm=norm, act="PReLU"))
     return convs
 
