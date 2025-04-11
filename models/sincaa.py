@@ -9,12 +9,12 @@ def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm"):
     convs = nn.ModuleList()
     for _ in range(num_layers):
         net = gnn.Sequential('x, edge_index, edge_attr', [
-        (gnn.GINConv(nn.Sequential(
+        (gnn.GINEConv(nn.Sequential(
             nn.Linear(channels, channels),
             nn.PReLU(),
             nn.Linear(channels, channels),
         )), 'x, edge_index, edge_attr -> x'),
-        (gnn.GINConv(nn.Sequential(
+        (gnn.GINEConv(nn.Sequential(
             nn.Linear(channels, channels),
             nn.PReLU(),
             nn.Linear(channels, channels),
