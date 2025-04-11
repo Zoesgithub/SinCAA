@@ -8,7 +8,7 @@ from utils.data_utils import collate_fn
 def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm"):
     convs = nn.ModuleList()
     for _ in range(num_layers):
-        net = Sequential('x, edge_index, edge_attr', [
+        net = gnn.Sequential('x, edge_index, edge_attr', [
         (gnn.GINConv(nn.Sequential(
             nn.Linear(channels, channels),
             nn.PReLU(),
