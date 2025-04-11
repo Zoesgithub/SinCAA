@@ -47,7 +47,7 @@ def construct_gine(num_layers, channels):
 class SinCAA(nn.Module):
     def __init__(self, args) -> None:
         super().__init__()
-        self.local_info_net=construct_gin(6, args.model_channels)
+        self.decoder=construct_gin(1, args.model_channels)[0]
         if hasattr(args, "model") and args.model=="GAT":
             self.topological_net=gnn.models.GAT(args.model_channels, args.model_channels, args.topological_net_layers)
             self.model="GAT"
@@ -63,9 +63,13 @@ class SinCAA(nn.Module):
         )
         self.node_float_embeder = nn.Linear(
             4, args.model_channels)
-        self.recovery_info=nn.Linear(args.model_channels, 200)
-        self.edge_recovery_info=nn.Linear(args.model_channels, 200)
-        self.feat_dropout_rate=0.3
+        if args.norm=='BatchNorm':
+            self.recovery_info=nn.Sequential(nn.BatchNorm1d(args.model_channels),nn.Linear(args.model_channels, 200)) 
+            self.edge_recovery_info=nn.Sequential(nn.BatchNorm1d(args.model_channels),nn.Linear(args.model_channels, 200))
+        else:
+            self.recovery_info=nn.Linear(args.model_channels, 200)
+            self.edge_recovery_info=nn.Linear(args.model_channels, 200) 
+        self.feat_dropout_rate=0.5
         self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
         self.transform_layer=nn.Linear(args.model_channels*args.topological_net_layers, args.model_channels)
         
@@ -79,7 +83,10 @@ class SinCAA(nn.Module):
             mask=(torch.rand_like(node_emb[:, :1])<1-self.feat_dropout_rate).float()
         else:
             mask=torch.zeros_like(node_emb[:, :1])+1
-        edge_mask=((mask[edges[0]]+mask[edges[1]])==2).float()
+        if edges is not None:
+            edge_mask=((mask[edges[0]]+mask[edges[1]])==2).float()
+        else:
+            edge_mask=None
         return mask, edge_mask
 
     def calculate_topol_emb(self, feats, mask=None):
@@ -113,42 +120,30 @@ class SinCAA(nn.Module):
             
         # gps forward
         x = node_emb
+        mask, edge_mask=self.generate_mask(x, edge_index)
+        x=x*mask
         inpx=x
         assert edge_index.max()==x.shape[0]-1
         assert edge_index.shape[-1]==0 or edge_index.max()<len(x), f"{edge_index.max} {x.shape}"
         xs=[]
         recovery_info_loss=0
-        
+        #part_info=feats["part_info"]
         #dx_loss=0
         if self.model=="GAT":
             x=self.topological_net(x, edge_index,  edge_attr=edge_emb,batch=batch_id)
 
         else:
             for conv in self.topological_net:
-                mask, edge_mask=self.generate_mask(x, edge_index)
-                x=x*mask
-                
                 assert len(x)==len(batch_id), f"{x.shape}{batch_id.shape}"
                 assert len(edge_emb)==edge_index.shape[-1], f"{edge_emb.shape}{edge_index.shape}"
                 x = conv(x, edge_index, edge_attr=edge_emb*edge_mask,batch=batch_id)
-                '''recovery_info=self.recovery_info(x[mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
-                l=feats["nodes_int_feats"][..., :2][mask.squeeze(-1)<1].reshape(-1)
-                recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l, reduce=False)).sum()/max(recovery_info.shape[0], 1)
                 
-                # recovery edge
-                edge_recover_info=self.edge_recovery_info((x[edge_index[0]]+x[edge_index[1]])[edge_mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
-                edge_l=edge_feats[edge_mask.squeeze(-1)<1].reshape(-1)
-                recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(edge_recover_info, edge_l, reduce=False)).sum()/max(edge_recover_info.shape[0], 1)
-                #dx_loss=(abs(x-local_x)).sum(-1).mean()+dx_loss'''
-    
         ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="sum")
-        #batch_ret_emb=torch.scatter_reduce(x.new_zeros(batch_id.max()+1, x.shape[-1]), 0, batch_id[..., None].expand_as(x), x, include_self=False, reduce="sum")
-        part_info=feats["part_info"]
-        #assert len(part_info)==3, len(part_info)
-        idxs=[_[0].to(x.device) for _ in part_info ]+[node_residue_index, batch_id]
-        for i,idx in enumerate(idxs):
-            emb=torch.scatter_reduce(x.new_zeros(idx.max()+1, x.shape[-1]), 0, idx[..., None].expand_as(x), x, include_self=False, reduce="sum")
-            tx=self.local_info_net[i](emb[idx], edge_index)
+        
+        for i in range(3):
+            mask, edge_mask=self.generate_mask(x, edge_index)
+            tx=x*mask
+            tx=self.decoder(tx, edge_index)
             recovery_info=self.recovery_info(tx).reshape(-1, 2, 100).reshape(-1, 100)
             l=feats["nodes_int_feats"][..., :2].reshape(-1)
             recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l, reduce=False)).sum()/max(recovery_info.shape[0], 1)
