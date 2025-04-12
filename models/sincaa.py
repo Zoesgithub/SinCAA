@@ -77,7 +77,7 @@ def construct_gine(num_layers, channels):
 class SinCAA(nn.Module):
     def __init__(self, args) -> None:
         super().__init__()
-        self.decoder=construct_gps_gin(1, args.model_channels, num_head=args.num_head, attn_type="multihead", norm=args.norm)[0]
+        self.decoder=gnn.models.GIN(args.model_channels, args.model_channels,1)
         if hasattr(args, "model") and args.model=="GAT":
             self.topological_net=gnn.models.GAT(args.model_channels, args.model_channels, args.topological_net_layers)
             self.model="GAT"
@@ -156,8 +156,8 @@ class SinCAA(nn.Module):
             
         # gps forward
         x = node_emb
-        #mask, edge_mask=self.generate_mask(x, edge_index)
-        #x=x*mask
+        mask, edge_mask=self.generate_mask(x, edge_index, batch_id)
+        x=x*mask
         inpx=x
         assert edge_index.max()==x.shape[0]-1
         assert edge_index.shape[-1]==0 or edge_index.max()<len(x), f"{edge_index.max} {x.shape}"
@@ -172,15 +172,15 @@ class SinCAA(nn.Module):
             for conv in self.topological_net:
                 assert len(x)==len(batch_id), f"{x.shape}{batch_id.shape}"
                 assert len(edge_emb)==edge_index.shape[-1], f"{edge_emb.shape}{edge_index.shape}"
-                x = conv(x, edge_index, edge_attr=edge_emb,batch=batch_id)
+                x = conv(x, edge_index, edge_attr=edge_emb*edge_mask,batch=batch_id)
                 
         ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="sum")
         acc=0
-        num_round=3
+        num_round=1
         for i in range(num_round):
-            mask, edge_mask=self.generate_mask(x, edge_index,batch_id, 0.8)
-            tx=x*mask
-            tx=self.decoder(tx, edge_index,batch=batch_id)
+            #mask, edge_mask=self.generate_mask(x, edge_index,batch_id, 0.8)
+            tx=x#*mask
+            tx=self.decoder(tx, edge_index,)
             recovery_info=self.recovery_info(tx[mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
             l=feats["nodes_int_feats"][mask.squeeze(-1)<1][..., :2].reshape(-1)
             recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l, reduce=False)).sum()/max(recovery_info.shape[0], 1)
@@ -200,12 +200,14 @@ class SinCAA(nn.Module):
 
     def forward(self, aa_data, mol_data, neighbor_data):
         
-        merge_feat=collate_fn([[aa_data], [neighbor_data], [mol_data]])[0]
+        merge_feat=collate_fn([[aa_data], [neighbor_data]])[0]
         
-        merge_emb, emb, rec_loss, acc= self.calculate_topol_emb(merge_feat)
+        merge_emb, emb, _, _= self.calculate_topol_emb(merge_feat)
         na=aa_data["node_residue_index"].max()+1
         aa_pseudo_emb=emb[:na]
         neighbor_pseudo_emb=emb[na:neighbor_data["node_residue_index"].max()+1+na]
+        
+        _, _, rec_loss, acc= self.calculate_topol_emb(mol_data)
         #mol_emb, _, mol_rec_loss, mol_dx_loss=self.calculate_topol_emb(mol_data)
         #aa_emb, aa_pseudo_emb, aa_rec_loss, aa_dx_loss=self.calculate_topol_emb(aa_data)
         #neighbor_emb, neighbor_pseudo_emb, neigh_rec_loss, neigh_dx_loss=self.calculate_topol_emb(neighbor_data)
