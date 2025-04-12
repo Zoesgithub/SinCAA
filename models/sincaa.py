@@ -30,7 +30,19 @@ def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm"):
 def construct_gps_gin(num_layers, channels, attn_type, num_head, norm="GraphNorm"):
     convs = nn.ModuleList()
     for _ in range(num_layers):
-        net = gnn.models.GAT(channels, channels, 2)
+        net = gnn.Sequential('x, edge_index', [
+        (gnn.GINConv(nn.Sequential(
+            nn.Linear(channels, channels),
+            nn.PReLU(),
+            nn.Linear(channels, channels),
+        )), 'x, edge_index -> x'),
+        (gnn.GINConv(nn.Sequential(
+            nn.Linear(channels, channels),
+            nn.PReLU(),
+            nn.Linear(channels, channels),
+        )), 'x, edge_index -> x'),
+       
+    ])
 
         convs.append(gnn.GPSConv(channels, net, heads=num_head,
                                  attn_type=attn_type, norm=norm, act="PReLU"))
@@ -65,7 +77,7 @@ def construct_gine(num_layers, channels):
 class SinCAA(nn.Module):
     def __init__(self, args) -> None:
         super().__init__()
-        self.decoder=gnn.models.GIN(args.model_channels, args.model_channels, 3)
+        self.decoder=construct_gps_gin(1, args.model_channels, num_head=args.num_head, attn_type="multihead", norm=args.norm)[0]
         if hasattr(args, "model") and args.model=="GAT":
             self.topological_net=gnn.models.GAT(args.model_channels, args.model_channels, args.topological_net_layers)
             self.model="GAT"
@@ -96,13 +108,17 @@ class SinCAA(nn.Module):
         topological_net=sum(p.numel() for p in self.topological_net.parameters())
         return {"total":total, "topological_net":topological_net}
     
-    def generate_mask(self, node_emb, edges, dropout_rate=None):
+    def generate_mask(self, node_emb, edges, batch_id, dropout_rate=None):
         if dropout_rate is None:
             dropout_rate=self.feat_dropout_rate
         if self.training:
             mask=(torch.rand_like(node_emb[:, :1])<1-dropout_rate).float()
         else:
             mask=torch.zeros_like(node_emb[:, :1])+1
+        for i in torch.unique(batch_id):
+            p=(batch_id==i).nonzero(as_tuple=False).squeeze(1)
+            if mask[p].max()<1:
+                mask[torch.randint(0, p.numel(), (1,))]=1
         if edges is not None:
             edge_mask=((mask[edges[0]]+mask[edges[1]])==2).float()
         else:
@@ -140,8 +156,8 @@ class SinCAA(nn.Module):
             
         # gps forward
         x = node_emb
-        mask, edge_mask=self.generate_mask(x, edge_index)
-        x=x*mask
+        #mask, edge_mask=self.generate_mask(x, edge_index)
+        #x=x*mask
         inpx=x
         assert edge_index.max()==x.shape[0]-1
         assert edge_index.shape[-1]==0 or edge_index.max()<len(x), f"{edge_index.max} {x.shape}"
@@ -156,15 +172,15 @@ class SinCAA(nn.Module):
             for conv in self.topological_net:
                 assert len(x)==len(batch_id), f"{x.shape}{batch_id.shape}"
                 assert len(edge_emb)==edge_index.shape[-1], f"{edge_emb.shape}{edge_index.shape}"
-                x = conv(x, edge_index, edge_attr=edge_emb*edge_mask,batch=batch_id)
+                x = conv(x, edge_index, edge_attr=edge_emb,batch=batch_id)
                 
         ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="sum")
         acc=0
         num_round=3
         for i in range(num_round):
-            mask, edge_mask=self.generate_mask(x, edge_index)
+            mask, edge_mask=self.generate_mask(x, edge_index,batch_id, 0.8)
             tx=x*mask
-            tx=self.decoder(tx, edge_index,)
+            tx=self.decoder(tx, edge_index,batch=batch_id)
             recovery_info=self.recovery_info(tx[mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
             l=feats["nodes_int_feats"][mask.squeeze(-1)<1][..., :2].reshape(-1)
             recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l, reduce=False)).sum()/max(recovery_info.shape[0], 1)
