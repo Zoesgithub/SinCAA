@@ -93,7 +93,8 @@ def contrastive_loss(pred, pos,eps=1e-6, rescale_factor=10,pmask=None):
     neg_distance = torch.einsum('ab,cb->ac', pred, pred)*rescale_factor
     mask = torch.zeros_like(neg_distance)
     mask[torch.arange(len(pred)), torch.arange(len(pred))]=rescale_factor
-    mask[pmask>0]=rescale_factor
+    if len(pmask)==len(mask):
+        mask[pmask>0]=rescale_factor
     neg_distance = (neg_distance*(mask<rescale_factor).float()-mask)
     
     label = pos_distance.new_zeros(pos_distance.shape[0]).long()
@@ -140,10 +141,10 @@ def inner_trainer(rank, world_size, args):
     
     
     train_data = ChainDataset(aa_path=args.train_aa_data_path,
-                            mol_path=args.train_mol_data_path, cache_path=args.cache_path,world_size=world_size, rank=rank, num_level=args.max_level, istrain=True)
+                            mol_path=args.train_mol_data_path, cache_path=args.cache_path,world_size=world_size, rank=rank, max_combine=args.max_combine, istrain=True)
     
     valid_data = ChainDataset(aa_path=args.val_aa_data_path,
-                            mol_path=args.val_mol_data_path,  cache_path=args.cache_path,world_size=world_size, rank=rank, num_level=args.max_level)
+                            mol_path=args.val_mol_data_path,  cache_path=args.cache_path,world_size=world_size, rank=rank, max_combine=args.max_combine)
     train_data_loader = DataLoader(
         train_data, batch_size=args.batch_size, collate_fn=collate_fn, num_workers=args.num_workers, shuffle=True, drop_last=True)
     valid_data_loader = DataLoader(
@@ -201,8 +202,10 @@ def inner_trainer(rank, world_size, args):
             all_neighbor_index=aa_data["index"]
             aa_contrastive_loss, acc = contrastive_loss(
                 all_aa_pseudo_emb, all_neighbor_pseudo_emb,  pmask=get_neighbor_mask(all_neighbor_index,all_neighbor_index,train_map_between_neighbors))
-            assert aa_data["sim"].shape==similarity.shape
-            similarity_loss=-(torch.log(similarity.clamp(1e-6))*aa_data["sim"]+torch.log((1-similarity).clamp(1e-6))*(1-aa_data["sim"])).mean()+(torch.log(aa_data["sim"].clamp(1e-6))*aa_data["sim"]+torch.log((1-aa_data["sim"]).clamp(1e-6))*(1-aa_data["sim"])).mean()
+            if aa_data["sim"].shape==similarity.shape:
+                similarity_loss=-(torch.log(similarity.clamp(1e-6))*aa_data["sim"]+torch.log((1-similarity).clamp(1e-6))*(1-aa_data["sim"])).mean()+(torch.log(aa_data["sim"].clamp(1e-6))*aa_data["sim"]+torch.log((1-aa_data["sim"]).clamp(1e-6))*(1-aa_data["sim"])).mean()
+            else:
+                similarity_loss=rec_loss.new_zeros(1)
             
             loss =aa_contrastive_loss+rec_loss*10+similarity_loss
             if args.aba:
