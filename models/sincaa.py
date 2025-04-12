@@ -174,13 +174,15 @@ class SinCAA(nn.Module):
                 assert len(edge_emb)==edge_index.shape[-1], f"{edge_emb.shape}{edge_index.shape}"
                 x = conv(x, edge_index, edge_attr=edge_emb*edge_mask,batch=batch_id)
                 
-        ret_emb=torch.scatter_reduce(x.new_zeros(node_residue_index.max()+1, x.shape[-1]), 0, node_residue_index[..., None].expand_as(x), x, include_self=False, reduce="sum")
+        ret_emb=torch.scatter_reduce(x.new_zeros(batch_id.max()+1, x.shape[-1]), 0, batch_id[..., None].expand_as(x), x, include_self=False, reduce="sum")
         acc=0
         num_round=1
         for i in range(num_round):
-            #mask, edge_mask=self.generate_mask(x, edge_index,batch_id, 0.8)
-            tx=x#*mask
-            #tx=self.decoder(tx, edge_index,)
+            emask, eedge_mask=self.generate_mask(x, edge_index,batch_id, 0.3)
+            tx=x*emask
+            edge_mask=eedge_mask*edge_mask
+            mask=emask*mask
+            tx=self.decoder(tx, edge_index,)
             recovery_info=self.recovery_info(tx[mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
             l=feats["nodes_int_feats"][mask.squeeze(-1)<1][..., :2].reshape(-1)
             recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l, reduce=False)).sum()/max(recovery_info.shape[0], 1)
@@ -203,9 +205,14 @@ class SinCAA(nn.Module):
         merge_feat=collate_fn([[aa_data], [neighbor_data]])[0]
         
         merge_emb, emb, _, _= self.calculate_topol_emb(merge_feat)
-        na=aa_data["node_residue_index"].max()+1
+   
+        if len(emb)==aa_data["node_residue_index"].max()+1+neighbor_data["node_residue_index"].max()+1:
+            na=aa_data["node_residue_index"].max()+1
+        else:
+            assert len(emb)==aa_data["batch_id"].max()+1+neighbor_data["batch_id"].max()+1
+            na=aa_data["batch_id"].max()+1
         aa_pseudo_emb=emb[:na]
-        neighbor_pseudo_emb=emb[na:neighbor_data["node_residue_index"].max()+1+na]
+        neighbor_pseudo_emb=emb[na:]
         
         _, _, rec_loss, acc= self.calculate_topol_emb(mol_data)
         #mol_emb, _, mol_rec_loss, mol_dx_loss=self.calculate_topol_emb(mol_data)

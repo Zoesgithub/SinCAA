@@ -257,7 +257,7 @@ def merge_aa_withoutconf(mid, start):
 
 
 class MolDataset(Dataset):
-    def __init__(self, aa_path, mol_path=None, cache_path=None, num_projection=20, world_size=1, rank=0, num_level=4, istrain=False) -> None:
+    def __init__(self, aa_path, mol_path=None, cache_path=None, num_projection=20, world_size=1, rank=0, max_combine=4, istrain=False) -> None:
         super().__init__()
         aa_data = pd.read_csv(aa_path)
         self.aa_smiles = aa_data["SMILES"]
@@ -278,12 +278,12 @@ class MolDataset(Dataset):
         self.num_projection = num_projection
         step=(len(self.aa_smiles)+world_size-1)//world_size
         self.index=list(range(len(self.aa_smiles)))[step*rank:step*rank+step]
-        self.num_level=num_level
+        self.max_combine=max_combine
         
         mol_step=(len(self.mol_data)+world_size-1)//world_size
         self.mol_index=list(range(len(self.mol_data)))[mol_step*rank:mol_step*rank+mol_step]
         self.istrain=istrain
-        self.max_length=3
+    
         
         
     def build_neighbor_key(self):
@@ -314,9 +314,9 @@ class MolDataset(Dataset):
         if sim==0:
             print(self.aa_similarity[index], mid_aa)
         
-        aa_data=get_graph(smiles=mid_aa, max_level=self.num_level)
-        mol_data=get_graph(smiles=self.mol_data[mol_idx], max_level=self.num_level)
-        nei_data=get_graph(smiles=neighbor_aa, max_level=self.num_level)
+        aa_data=get_graph(smiles=mid_aa, max_level=None)
+        mol_data=get_graph(smiles=self.mol_data[mol_idx], max_level=None)
+        nei_data=get_graph(smiles=neighbor_aa, max_level=None)
         aa_data["sim"]=sim
         aa_data["index"]=torch.tensor(index).reshape(-1)
         return aa_data, mol_data ,nei_data
@@ -345,9 +345,9 @@ class ChainDataset(MolDataset):
             
         sims=[sim]
         indexs=[index]
-        aa_data=[get_graph(smiles=mid_aa, max_level=self.num_level)]
-        nei_data=[get_graph(smiles=neighbor_aa, max_level=self.num_level)]
-        num_added_aa=random.randint(0, self.max_length)
+        aa_data=[get_graph(smiles=mid_aa, max_level=None)]
+        nei_data=[get_graph(smiles=neighbor_aa, max_level=None)]
+        num_added_aa=random.randint(0, self.max_combine)
         while num_added_aa>0:
             num_added_aa-=1
             aa_data[-1]=remove_last_atom(aa_data[-1])
@@ -355,13 +355,13 @@ class ChainDataset(MolDataset):
             idx=self.index[random.randint(0, len(self.index)-1)]
             neighbors = self.aa_neighbors[idx].split(";")
             nidx=random.randint(0, len(neighbors)-1)
-            aa_data.append(get_graph(smiles=self.aa_smiles[idx], max_level=self.num_level))
-            nei_data.append(get_graph(smiles=neighbors[nidx], max_level=self.num_level))
+            aa_data.append(get_graph(smiles=self.aa_smiles[idx], max_level=None))
+            nei_data.append(get_graph(smiles=neighbors[nidx], max_level=None))
             sims.append(float(self.aa_similarity[idx].split(";")[nidx]))
             indexs.append(idx)
             
             
-        mol_data=get_graph(smiles=self.mol_data[mol_idx], max_level=self.num_level)
+        mol_data=get_graph(smiles=self.mol_data[mol_idx], max_level=None)
         
         aa_data, nei_data=collate_fn([[a,b] for a,b in zip(aa_data,nei_data)])
        

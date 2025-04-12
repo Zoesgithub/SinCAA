@@ -31,7 +31,7 @@ if __name__=="__main__":
     parser.add_argument("--cache_path", type=str, help="path to cache files", default="data/cache/")
     parser.add_argument("--load_path", type=str, help="path to load state dict", default=None)
     parser.add_argument("--num_workers", type=int, help="num of workers to load data", default=5)
-    parser.add_argument("--max_level", type=int, help="num of levels to partition", default=4)
+    parser.add_argument("--max_combine", type=int, help="", default=4)
     parser.add_argument("--norm", type=str, choices=["BatchNorm", "GraphNorm", "LayerNorm", "None"], default=None)
     parser.add_argument("--aba", action='store_true')
     parser.add_argument("--model",  type=str, choices=["GPS"], default="GPS")
