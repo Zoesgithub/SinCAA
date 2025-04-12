@@ -77,7 +77,7 @@ def construct_gine(num_layers, channels):
 class SinCAA(nn.Module):
     def __init__(self, args) -> None:
         super().__init__()
-        self.decoder=gnn.models.GIN(args.model_channels, args.model_channels,1)
+        
         if hasattr(args, "model") and args.model=="GAT":
             self.topological_net=gnn.models.GAT(args.model_channels, args.model_channels, args.topological_net_layers)
             self.model="GAT"
@@ -180,7 +180,7 @@ class SinCAA(nn.Module):
         for i in range(num_round):
             #mask, edge_mask=self.generate_mask(x, edge_index,batch_id, 0.8)
             tx=x#*mask
-            tx=self.decoder(tx, edge_index,)
+            #tx=self.decoder(tx, edge_index,)
             recovery_info=self.recovery_info(tx[mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
             l=feats["nodes_int_feats"][mask.squeeze(-1)<1][..., :2].reshape(-1)
             recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l, reduce=False)).sum()/max(recovery_info.shape[0], 1)
