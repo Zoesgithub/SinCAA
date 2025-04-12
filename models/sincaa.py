@@ -178,8 +178,10 @@ class SinCAA(nn.Module):
         acc=0
         num_round=1
         for i in range(num_round):
-            #mask, edge_mask=self.generate_mask(x, edge_index,batch_id, 0.8)
-            tx=x#*mask
+            emask, eedge_mask=self.generate_mask(x, edge_index,batch_id, 0.3)
+            tx=x*emask
+            edge_mask=eedge_mask*edge_mask
+            mask=emask*mask
             tx=self.decoder(tx, edge_index,)
             recovery_info=self.recovery_info(tx[mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
             l=feats["nodes_int_feats"][mask.squeeze(-1)<1][..., :2].reshape(-1)
