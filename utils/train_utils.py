@@ -254,11 +254,11 @@ def inner_trainer(rank, world_size, args):
                     all_neighbor_index=aa_data["index"]
                     aa_contrastive_loss, acc = contrastive_loss(
                     all_aa_pseudo_emb, all_neighbor_pseudo_emb,  pmask=get_neighbor_mask(all_neighbor_index,all_neighbor_index,train_map_between_neighbors)) 
-                    similarity_loss=-(torch.log(similarity.clamp(1e-6))*aa_data["sim"]+torch.log((1-similarity).clamp(1e-6))*(1-aa_data["sim"])).mean()
+                    
                     if args.aba:
                         val_aa_con_loss+=rec_loss.item()
                     else:
-                        val_aa_con_loss += aa_contrastive_loss.item()+similarity_loss.item()
+                        val_aa_con_loss += aa_contrastive_loss.item()
                     val_acc += acc.float().sum().item()
                     val_num += acc.shape[0]
 
