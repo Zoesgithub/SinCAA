@@ -77,7 +77,10 @@ def construct_gine(num_layers, channels):
 class SinCAA(nn.Module):
     def __init__(self, args) -> None:
         super().__init__()
-        
+        if args.decoder_layers>0:
+            self.decoder=gnn.models.GIN(args.model_channels, args.model_channels, args.decoder_layers)
+        else:
+            self.decoder=None
         if hasattr(args, "model") and args.model=="GAT":
             self.topological_net=gnn.models.GAT(args.model_channels, args.model_channels, args.topological_net_layers)
             self.model="GAT"
@@ -172,22 +175,24 @@ class SinCAA(nn.Module):
             for i,conv in enumerate(self.topological_net):
                 assert len(x)==len(batch_id), f"{x.shape}{batch_id.shape}"
                 assert len(edge_emb)==edge_index.shape[-1], f"{edge_emb.shape}{edge_index.shape}"
-                if i>0:
-                    tmask, tedge_mask=self.generate_mask(x, edge_index, batch_id, 0.3)
-                    x=x*tmask
-                    edge_mask=edge_mask*tedge_mask
-                x = conv(x, edge_index, edge_attr=edge_emb*edge_mask,batch=batch_id)
+                if i==0:
+                    edge_attr=edge_emb*edge_mask
+                else:
+                    edge_attr=x[edge_index[0]]+x[edge_index[1]]
+                x = conv(x, edge_index, edge_attr=edge_attr,batch=batch_id)
+            
                 
                 
         ret_emb=torch.scatter_reduce(x.new_zeros(batch_id.max()+1, x.shape[-1]), 0, batch_id[..., None].expand_as(x), x, include_self=False, reduce="sum")
         acc=0
         num_round=1
         for i in range(num_round):
-            emask, eedge_mask=self.generate_mask(x, edge_index,batch_id, 0.3)
-            tx=x*emask
-            edge_mask=eedge_mask*edge_mask
-            mask=emask*mask
-            tx=self.decoder(tx, edge_index,)
+            #emask, eedge_mask=self.generate_mask(x, edge_index,batch_id, 0.3)
+            tx=x#*emask
+            #edge_mask=eedge_mask*edge_mask
+            #mask=emask*mask
+            if self.decoder is not None:
+                tx=self.decoder(tx, edge_index,)
             recovery_info=self.recovery_info(tx[mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
             l=feats["nodes_int_feats"][mask.squeeze(-1)<1][..., :2].reshape(-1)
             recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l, reduce=False)).sum()/max(recovery_info.shape[0], 1)
