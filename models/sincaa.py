@@ -169,10 +169,15 @@ class SinCAA(nn.Module):
             x=self.topological_net(x, edge_index,  edge_attr=edge_emb,batch=batch_id)
 
         else:
-            for conv in self.topological_net:
+            for i,conv in enumerate(self.topological_net):
                 assert len(x)==len(batch_id), f"{x.shape}{batch_id.shape}"
                 assert len(edge_emb)==edge_index.shape[-1], f"{edge_emb.shape}{edge_index.shape}"
+                if i>0:
+                    tmask, tedge_mask=self.generate_mask(x, edge_index, batch_id, 0.3)
+                    x=x*tmask
+                    edge_mask=edge_mask*tedge_mask
                 x = conv(x, edge_index, edge_attr=edge_emb*edge_mask,batch=batch_id)
+                
                 
         ret_emb=torch.scatter_reduce(x.new_zeros(batch_id.max()+1, x.shape[-1]), 0, batch_id[..., None].expand_as(x), x, include_self=False, reduce="sum")
         acc=0
@@ -204,7 +209,7 @@ class SinCAA(nn.Module):
         
         merge_feat=collate_fn([[aa_data], [neighbor_data]])[0]
         
-        merge_emb, emb, _, _= self.calculate_topol_emb(merge_feat)
+        merge_emb, emb, rec_loss_aa, _= self.calculate_topol_emb(merge_feat)
    
         if len(emb)==aa_data["node_residue_index"].max()+1+neighbor_data["node_residue_index"].max()+1:
             na=aa_data["node_residue_index"].max()+1
@@ -219,4 +224,4 @@ class SinCAA(nn.Module):
         #aa_emb, aa_pseudo_emb, aa_rec_loss, aa_dx_loss=self.calculate_topol_emb(aa_data)
         #neighbor_emb, neighbor_pseudo_emb, neigh_rec_loss, neigh_dx_loss=self.calculate_topol_emb(neighbor_data)
         #merge_emb=torch.cat([merge_emb, mol_emb], 0)
-        return aa_pseudo_emb,neighbor_pseudo_emb, rec_loss, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), acc.item()
+        return aa_pseudo_emb,neighbor_pseudo_emb, rec_loss+rec_loss_aa, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), acc.item()
