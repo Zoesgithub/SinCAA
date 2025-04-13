@@ -21,7 +21,7 @@ if __name__=="__main__":
     parser.add_argument("--model_channels", type=int, default=256, help="The number of channels for model")
     parser.add_argument("--num_head", type=int, default=16, help="The number of channels for model")
     parser.add_argument("--topological_net_layers", type=int, default=6, help="The number of topological net layers")
-    #parser.add_argument("--position_net_layers", type=int, default=6, help="The number of position net layers")
+    parser.add_argument("--decoder_layers", type=int, default=2, help="The number of decoder layers")
     
     parser.add_argument("--learning_rate", type=float, default=1e-4, help="Learning rate")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size")

@@ -171,8 +171,8 @@ def inner_trainer(rank, world_size, args):
    
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
     
-    scheduler = lambda epoch :( 1 + np.cos((epoch) * np.pi / args.num_epochs) ) * 0.5
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=scheduler)
+    #scheduler = lambda epoch :( 1 + np.cos((epoch) * np.pi / args.num_epochs) ) * 0.5
+    #scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=scheduler)
     def get_neighbor_mask(iindex,jindex, map_dict):
         ret=torch.zeros([len(iindex), len(jindex)])
         for i in range(len(ret)):
@@ -225,7 +225,7 @@ def inner_trainer(rank, world_size, args):
                     save_path, "model.statedict.tmp"))
                 
             
-        scheduler.step()
+        #scheduler.step()
         if True:
             logger.info(f"Finish training for epoch {epoch}")
             val_aa_l2_loss = 0

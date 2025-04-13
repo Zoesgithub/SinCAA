@@ -347,7 +347,7 @@ class ChainDataset(MolDataset):
         indexs=[index]
         aa_data=[get_graph(smiles=mid_aa, max_level=None)]
         nei_data=[get_graph(smiles=neighbor_aa, max_level=None)]
-        num_added_aa=random.randint(0, self.max_combine)
+        num_added_aa=self.max_combine #random.randint(0, self.max_combine)
         while num_added_aa>0:
             num_added_aa-=1
             aa_data[-1]=remove_last_atom(aa_data[-1])
