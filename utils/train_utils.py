@@ -110,7 +110,7 @@ def inner_trainer(rank, world_size, args):
     if rank==0:
         save_path=os.path.join(args.save_path, args.experiment_name)
         logger.add(os.path.join(save_path, "log"))
-        
+    
     def pairwise_sync(tensor):
         gathered_embeddings = [torch.zeros_like(tensor) for _ in range(world_size)]
         dist.all_gather(gathered_embeddings, tensor)
@@ -171,8 +171,8 @@ def inner_trainer(rank, world_size, args):
    
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
     
-    #scheduler = lambda epoch :( 1 + np.cos((epoch) * np.pi / args.num_epochs) ) * 0.5
-    #scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=scheduler)
+    scheduler = lambda epoch :( 1 + np.cos((epoch) * np.pi / args.num_epochs) ) * 0.5
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=scheduler)
     def get_neighbor_mask(iindex,jindex, map_dict):
         ret=torch.zeros([len(iindex), len(jindex)])
         for i in range(len(ret)):
@@ -183,6 +183,7 @@ def inner_trainer(rank, world_size, args):
     
     
     for epoch in range(start_epoch,args.num_epochs):
+        print(optimizer.param_groups[0]['lr'])
         for i, d in enumerate(train_data_loader):
             optimizer.zero_grad()
             model.zero_grad()
@@ -211,8 +212,8 @@ def inner_trainer(rank, world_size, args):
             if args.aba:
                 loss=rec_loss
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
             synchronize_gradients(model)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.2)
             optimizer.step()
             if torch.isnan(loss):
                 print(aa_data["sim"], aa_pseudo_emb)
@@ -225,7 +226,7 @@ def inner_trainer(rank, world_size, args):
                     save_path, "model.statedict.tmp"))
                 
             
-        #scheduler.step()
+        scheduler.step()
         if True:
             logger.info(f"Finish training for epoch {epoch}")
             val_aa_l2_loss = 0

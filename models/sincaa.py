@@ -111,10 +111,10 @@ class SinCAA(nn.Module):
         topological_net=sum(p.numel() for p in self.topological_net.parameters())
         return {"total":total, "topological_net":topological_net}
     
-    def generate_mask(self, node_emb, edges, batch_id, dropout_rate=None):
+    def generate_mask(self, node_emb, edges, batch_id, dropout_rate=None, add_mask=True):
         if dropout_rate is None:
             dropout_rate=self.feat_dropout_rate
-        if self.training:
+        if self.training and add_mask:
             mask=(torch.rand_like(node_emb[:, :1])<1-dropout_rate).float()
         else:
             mask=torch.zeros_like(node_emb[:, :1])+1
@@ -128,17 +128,15 @@ class SinCAA(nn.Module):
             edge_mask=None
         return mask, edge_mask
 
-    def calculate_topol_emb(self, feats, mask=None):
+    def calculate_topol_emb(self, feats, add_mask=True):
         node_int_feats = feats["nodes_int_feats"]
       
         node_float_feats = feats["nodes_float_feats"]
         edge_feats = feats["edge_attrs"]
         edge_index = feats["edges"]
-        node_residue_index=feats["node_residue_index"]
-        if "batch_id" in feats:
-            batch_id=feats["batch_id"].long()
-        else:
-            batch_id=node_residue_index
+      
+        batch_id=feats["batch_id"].long()
+      
        
         assert edge_index.shape[1] == edge_feats.shape[0], f"{edge_index.shape} {edge_feats.shape}"
         assert edge_index.shape[0] == 2, edge_index.shape
@@ -159,10 +157,10 @@ class SinCAA(nn.Module):
             
         # gps forward
         x = node_emb
-        mask, edge_mask=self.generate_mask(x, edge_index, batch_id)
+        mask, edge_mask=self.generate_mask(x, edge_index, batch_id, add_mask)
         x=x*mask
         inpx=x
-        assert edge_index.max()==x.shape[0]-1
+        assert edge_index.max()==x.shape[0]-1, f"{edge_index.shape} {x.shape}"
         assert edge_index.shape[-1]==0 or edge_index.max()<len(x), f"{edge_index.max} {x.shape}"
         xs=[]
         recovery_info_loss=0
@@ -212,21 +210,27 @@ class SinCAA(nn.Module):
 
     def forward(self, aa_data, mol_data, neighbor_data):
         
-        merge_feat=collate_fn([[aa_data], [neighbor_data]])[0]
+        _, aa_pseudo_emb, rec_loss_aa, aa_acc= self.calculate_topol_emb(aa_data, add_mask=True)
+        _, neighbor_pseudo_emb, rec_loss_n, n_acc= self.calculate_topol_emb(neighbor_data, add_mask=True)
+        _, _, rec_loss_mol, mol_acc= self.calculate_topol_emb(mol_data, add_mask=True)
+        '''
+        merge_feat=collate_fn([[aa_data], [neighbor_data], [mol_data]])[0]
         
-        merge_emb, emb, rec_loss_aa, _= self.calculate_topol_emb(merge_feat)
+        merge_emb, emb, rec_loss_aa, acc= self.calculate_topol_emb(merge_feat, add_mask=True)
    
-        if len(emb)==aa_data["node_residue_index"].max()+1+neighbor_data["node_residue_index"].max()+1:
+        if len(emb)==aa_data["node_residue_index"].max()+1+neighbor_data["node_residue_index"].max()+1+mol_data["node_residue_index"].max()+1:
             na=aa_data["node_residue_index"].max()+1
+            nda=neighbor_data["node_residue_index"].max()+1
         else:
-            assert len(emb)==aa_data["batch_id"].max()+1+neighbor_data["batch_id"].max()+1
+            assert len(emb)==aa_data["batch_id"].max()+1+neighbor_data["batch_id"].max()+1+mol_data["batch_id"].max()+1
             na=aa_data["batch_id"].max()+1
+            nda=neighbor_data["batch_id"].max()+1
         aa_pseudo_emb=emb[:na]
-        neighbor_pseudo_emb=emb[na:]
+        neighbor_pseudo_emb=emb[na:na+nda]'''
         
-        _, _, rec_loss, acc= self.calculate_topol_emb(mol_data)
+        #_, _, rec_loss, acc= self.calculate_topol_emb(mol_data, add_mask=True)
         #mol_emb, _, mol_rec_loss, mol_dx_loss=self.calculate_topol_emb(mol_data)
         #aa_emb, aa_pseudo_emb, aa_rec_loss, aa_dx_loss=self.calculate_topol_emb(aa_data)
         #neighbor_emb, neighbor_pseudo_emb, neigh_rec_loss, neigh_dx_loss=self.calculate_topol_emb(neighbor_data)
         #merge_emb=torch.cat([merge_emb, mol_emb], 0)
-        return aa_pseudo_emb,neighbor_pseudo_emb, rec_loss+rec_loss_aa, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), acc.item()
+        return aa_pseudo_emb,neighbor_pseudo_emb, rec_loss_aa+rec_loss_n+rec_loss_mol, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), (aa_acc+n_acc+mol_acc).item()/3
