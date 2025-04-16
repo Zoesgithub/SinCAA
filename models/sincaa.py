@@ -111,24 +111,20 @@ class SinCAA(nn.Module):
         topological_net=sum(p.numel() for p in self.topological_net.parameters())
         return {"total":total, "topological_net":topological_net}
     
-    def generate_mask(self, node_emb, edges, batch_id, dropout_rate=None, add_mask=True):
+    def generate_mask(self, node_emb, edges, batch_id, dropout_rate=None, add_mask=False):
         if dropout_rate is None:
             dropout_rate=self.feat_dropout_rate
-        if self.training and add_mask:
+        if add_mask:
             mask=(torch.rand_like(node_emb[:, :1])<1-dropout_rate).float()
         else:
             mask=torch.zeros_like(node_emb[:, :1])+1
-        for i in torch.unique(batch_id):
-            p=(batch_id==i).nonzero(as_tuple=False).squeeze(1)
-            if mask[p].max()<1:
-                mask[torch.randint(0, p.numel(), (1,))]=1
         if edges is not None:
             edge_mask=((mask[edges[0]]+mask[edges[1]])==2).float()
         else:
             edge_mask=None
         return mask, edge_mask
 
-    def calculate_topol_emb(self, feats, add_mask=True):
+    def calculate_topol_emb(self, feats, add_mask=False):
         node_int_feats = feats["nodes_int_feats"]
       
         node_float_feats = feats["nodes_float_feats"]
@@ -157,7 +153,7 @@ class SinCAA(nn.Module):
             
         # gps forward
         x = node_emb
-        mask, edge_mask=self.generate_mask(x, edge_index, batch_id, add_mask)
+        mask, edge_mask=self.generate_mask(x, edge_index, batch_id, add_mask=add_mask)
         x=x*mask
         inpx=x
         assert edge_index.max()==x.shape[0]-1, f"{edge_index.shape} {x.shape}"
@@ -208,29 +204,9 @@ class SinCAA(nn.Module):
         return  pseudo_emb, rec_loss
      
 
-    def forward(self, aa_data, mol_data, neighbor_data):
-        
+    def forward(self, aa_data, mol_data, neighbor_data, add_mask):
+        assert add_mask
         _, aa_pseudo_emb, rec_loss_aa, aa_acc= self.calculate_topol_emb(aa_data, add_mask=True)
         _, neighbor_pseudo_emb, rec_loss_n, n_acc= self.calculate_topol_emb(neighbor_data, add_mask=True)
-        _, _, rec_loss_mol, mol_acc= self.calculate_topol_emb(mol_data, add_mask=True)
-        '''
-        merge_feat=collate_fn([[aa_data], [neighbor_data], [mol_data]])[0]
-        
-        merge_emb, emb, rec_loss_aa, acc= self.calculate_topol_emb(merge_feat, add_mask=True)
-   
-        if len(emb)==aa_data["node_residue_index"].max()+1+neighbor_data["node_residue_index"].max()+1+mol_data["node_residue_index"].max()+1:
-            na=aa_data["node_residue_index"].max()+1
-            nda=neighbor_data["node_residue_index"].max()+1
-        else:
-            assert len(emb)==aa_data["batch_id"].max()+1+neighbor_data["batch_id"].max()+1+mol_data["batch_id"].max()+1
-            na=aa_data["batch_id"].max()+1
-            nda=neighbor_data["batch_id"].max()+1
-        aa_pseudo_emb=emb[:na]
-        neighbor_pseudo_emb=emb[na:na+nda]'''
-        
-        #_, _, rec_loss, acc= self.calculate_topol_emb(mol_data, add_mask=True)
-        #mol_emb, _, mol_rec_loss, mol_dx_loss=self.calculate_topol_emb(mol_data)
-        #aa_emb, aa_pseudo_emb, aa_rec_loss, aa_dx_loss=self.calculate_topol_emb(aa_data)
-        #neighbor_emb, neighbor_pseudo_emb, neigh_rec_loss, neigh_dx_loss=self.calculate_topol_emb(neighbor_data)
-        #merge_emb=torch.cat([merge_emb, mol_emb], 0)
-        return aa_pseudo_emb,neighbor_pseudo_emb, rec_loss_aa+rec_loss_n+rec_loss_mol, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), (aa_acc+n_acc+mol_acc).item()/3
+        _, _, rec_loss_mol, mol_acc= self.calculate_topol_emb(mol_data, add_mask=add_mask)
+        return aa_pseudo_emb,neighbor_pseudo_emb, rec_loss_mol+rec_loss_aa+rec_loss_n, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), (mol_acc).item()

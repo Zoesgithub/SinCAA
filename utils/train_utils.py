@@ -195,7 +195,7 @@ def inner_trainer(rank, world_size, args):
                     if hasattr(Dict[k], "cuda"):
                         Dict[k] = Dict[k].to(rank)
             aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, pad_acc= model.forward(
-                aa_data, mol_data, aa_neighbor_data)
+                aa_data, mol_data, aa_neighbor_data, True)
           
             # reduce to one device
             all_aa_pseudo_emb=aa_pseudo_emb
@@ -248,7 +248,7 @@ def inner_trainer(rank, world_size, args):
                             if hasattr(Dict[k], "cuda"):
                                 Dict[k] = Dict[k].to(rank)
                     aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, _= model.forward(
-                        aa_data, mol_data, aa_neighbor_data)
+                        aa_data, mol_data, aa_neighbor_data, True)
 
                     all_aa_pseudo_emb=aa_pseudo_emb
                     all_neighbor_pseudo_emb=neighbor_pseudo_emb
