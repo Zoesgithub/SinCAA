@@ -13,10 +13,10 @@ import utils.data_constants as ud
 from openfold.np.residue_constants import restype_3to1, resname_to_idx
 from utils.chem_utils import pre_compute_distance_bound
 import shutil
-import metis
+#import metis
 import networkx as nx
 smiles_to_idx={Chem.MolToSmiles(Chem.MolFromSequence(restype_3to1[_], flavor=0)):resname_to_idx[_] for _ in restype_3to1}
-
+'''
 def recursive_partition(graph, id=0,depth=0, max_depth=4):
     if depth >= max_depth:
         return [list(graph.nodes), id]
@@ -51,12 +51,12 @@ def get_matrix_for_partions(partions, id_matrixes, depth):
     get_matrix_for_partions(right, id_matrixes, depth+1)
     id_matrixes[depth][id_matrixes[depth+1]!=ori_child_matrix]=id
     
-    
+    '''
 
 def myHash(text: str):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
-def add_part_info(feat, max_level):
+'''def add_part_info(feat, max_level):
     num_node=len(feat["nodes_int_feats"])
     edge=feat["edges"]
     if edge.shape[-1]!=2:
@@ -83,7 +83,7 @@ def add_part_info(feat, max_level):
         prev_unique_v=v
     feat["part_info"]=part_info
     
-    return feat
+    return feat'''
 
 def get_graph(aa_name=None, smiles=None, max_level=4):
     if smiles is not None:
