@@ -177,7 +177,7 @@ class SinCAA(nn.Module):
             
                 
                 
-        ret_emb=torch.scatter_reduce(x.new_zeros(batch_id.max()+1, x.shape[-1]), 0, batch_id[..., None].expand_as(x), x, include_self=False, reduce="sum")
+        ret_emb=torch.scatter_reduce(x.new_zeros(feats["node_residue_index"].max()+1, x.shape[-1]), 0, feats["node_residue_index"][..., None].expand_as(x), x, include_self=False, reduce="sum")
         acc=0
         num_round=1
         for i in range(num_round):
