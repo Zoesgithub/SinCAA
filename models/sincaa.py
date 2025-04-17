@@ -103,8 +103,10 @@ class SinCAA(nn.Module):
             self.recovery_info=nn.Linear(args.model_channels, 200)
             self.edge_recovery_info=nn.Linear(args.model_channels, 200) 
         self.feat_dropout_rate=0.5
-        self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
-        self.transform_layer=nn.Linear(args.model_channels*args.topological_net_layers, args.model_channels)
+        self.aba=args.aba
+        print(self.aba)
+        if not self.aba:
+            self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
         
     def get_num_params(self):
         total=sum(p.numel() for p in self.parameters())
@@ -207,6 +209,9 @@ class SinCAA(nn.Module):
     def forward(self, aa_data, mol_data, neighbor_data, add_mask):
         assert add_mask
         _, aa_pseudo_emb, rec_loss_aa, aa_acc= self.calculate_topol_emb(aa_data, add_mask=True)
-        _, neighbor_pseudo_emb, rec_loss_n, n_acc= self.calculate_topol_emb(neighbor_data, add_mask=True)
         _, _, rec_loss_mol, mol_acc= self.calculate_topol_emb(mol_data, add_mask=add_mask)
-        return aa_pseudo_emb,neighbor_pseudo_emb, rec_loss_mol+rec_loss_aa+rec_loss_n, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), (mol_acc).item()
+        if self.aba:
+            return aa_pseudo_emb, aa_pseudo_emb, (rec_loss_mol+rec_loss_aa)/2, rec_loss_aa.new_zeros(len(aa_pseudo_emb)), (mol_acc).item()
+        else:
+            _, neighbor_pseudo_emb, rec_loss_n, n_acc= self.calculate_topol_emb(neighbor_data, add_mask=True)
+            return aa_pseudo_emb,neighbor_pseudo_emb, (rec_loss_mol+rec_loss_aa+rec_loss_n)/3, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), (mol_acc).item()
