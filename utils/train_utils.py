@@ -208,7 +208,7 @@ def inner_trainer(rank, world_size, args):
             else:
                 similarity_loss=rec_loss.new_zeros(1)
             
-            loss =aa_contrastive_loss+rec_loss+similarity_loss
+            loss =aa_contrastive_loss+rec_loss*10+similarity_loss
             if args.aba:
                 loss=rec_loss
             loss.backward()
