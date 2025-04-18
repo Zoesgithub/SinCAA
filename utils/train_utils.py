@@ -259,7 +259,7 @@ def inner_trainer(rank, world_size, args):
                     if args.aba:
                         val_aa_con_loss+=rec_loss.item()
                     else:
-                        val_aa_con_loss += aa_contrastive_loss.item()
+                        val_aa_con_loss += aa_contrastive_loss.item()+rec_loss.item()*10
                     #val_acc += acc.float().sum().item()
                     #val_num += aa_pseudo_emb.shape[0]
                 
