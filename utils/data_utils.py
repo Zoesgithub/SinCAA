@@ -351,7 +351,7 @@ class ChainDataset(MolDataset):
         while num_added_aa>0:
             num_added_aa-=1
             aa_data[-1]=remove_last_atom(aa_data[-1])
-            nei_data[-1]=remove_last_atom(nei_data[-1])
+            #nei_data[-1]=remove_last_atom(nei_data[-1])
             idx=self.index[random.randint(0, len(self.index)-1)]
             neighbors = self.aa_neighbors[idx].split(";")
             nidx=random.randint(0, len(neighbors)-1)

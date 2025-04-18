@@ -194,15 +194,15 @@ def inner_trainer(rank, world_size, args):
                 for k in Dict:
                     if hasattr(Dict[k], "cuda"):
                         Dict[k] = Dict[k].to(rank)
-            aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, pad_acc= model.forward(
+            aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, pad_acc, aa_contrastive_loss= model.forward(
                 aa_data, mol_data, aa_neighbor_data, True)
           
             # reduce to one device
-            all_aa_pseudo_emb=aa_pseudo_emb
-            all_neighbor_pseudo_emb=neighbor_pseudo_emb
-            all_neighbor_index=aa_data["index"]
-            aa_contrastive_loss, acc = contrastive_loss(
-                all_aa_pseudo_emb, all_neighbor_pseudo_emb,  pmask=get_neighbor_mask(all_neighbor_index,all_neighbor_index,train_map_between_neighbors))
+            #all_aa_pseudo_emb=aa_pseudo_emb
+            #all_neighbor_pseudo_emb=neighbor_pseudo_emb
+            #all_neighbor_index=aa_data["index"]
+            #aa_contrastive_loss, acc = contrastive_loss(
+            #    all_aa_pseudo_emb, all_neighbor_pseudo_emb,  pmask=get_neighbor_mask(all_neighbor_index,all_neighbor_index,train_map_between_neighbors))
             if aa_data["sim"].shape==similarity.shape:
                 similarity_loss=-(torch.log(similarity.clamp(1e-6))*aa_data["sim"]+torch.log((1-similarity).clamp(1e-6))*(1-aa_data["sim"])).mean()+(torch.log(aa_data["sim"].clamp(1e-6))*aa_data["sim"]+torch.log((1-aa_data["sim"]).clamp(1e-6))*(1-aa_data["sim"])).mean()
             else:
@@ -220,11 +220,11 @@ def inner_trainer(rank, world_size, args):
                 exit()
             if i % args.logger_step == 0 and rank==0:
                 logger.info(
-                    f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.item()} ;  train acc { acc.float().sum().item()/len(acc)} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()} ; acc {pad_acc}")
+                    f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.item()} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()} ; acc {pad_acc}")
             if i%1000==0 and rank == 0:
                 torch.save({"state_dict":model.state_dict(), "epoch":epoch}, os.path.join(
                     save_path, "model.statedict.tmp"))
-                
+            
             
         scheduler.step()
         if True:
@@ -247,28 +247,29 @@ def inner_trainer(rank, world_size, args):
                         for k in Dict:
                             if hasattr(Dict[k], "cuda"):
                                 Dict[k] = Dict[k].to(rank)
-                    aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, _= model.forward(
+                    aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, _, aa_contrastive_loss= model.forward(
                         aa_data, mol_data, aa_neighbor_data, True)
 
-                    all_aa_pseudo_emb=aa_pseudo_emb
-                    all_neighbor_pseudo_emb=neighbor_pseudo_emb
-                    all_neighbor_index=aa_data["index"]
-                    aa_contrastive_loss, acc = contrastive_loss(
-                    all_aa_pseudo_emb, all_neighbor_pseudo_emb,  pmask=get_neighbor_mask(all_neighbor_index,all_neighbor_index,train_map_between_neighbors)) 
+                    #all_aa_pseudo_emb=aa_pseudo_emb
+                    #all_neighbor_pseudo_emb=neighbor_pseudo_emb
+                    #all_neighbor_index=aa_data["index"]
+                    #aa_contrastive_loss, acc = contrastive_loss(
+                    #all_aa_pseudo_emb, all_neighbor_pseudo_emb,  pmask=get_neighbor_mask(all_neighbor_index,all_neighbor_index,train_map_between_neighbors)) 
                     
                     if args.aba:
                         val_aa_con_loss+=rec_loss.item()
                     else:
                         val_aa_con_loss += aa_contrastive_loss.item()
-                    val_acc += acc.float().sum().item()
-                    val_num += acc.shape[0]
-
+                    #val_acc += acc.float().sum().item()
+                    #val_num += aa_pseudo_emb.shape[0]
+                
             all_loss =  torch.tensor(val_aa_con_loss).to(rank)
             dist.all_reduce(all_loss, op=dist.ReduceOp.SUM)
             all_loss = all_loss.item() 
             if rank==0:
                 logger.info(
-                f"Epoch {epoch} all loss {all_loss} aa cord loss {val_aa_l2_loss} ; mol cord loss {val_mol_l2_loss} ; contrastive loss {val_aa_con_loss} ; acc {val_acc/val_num}")
+                f"Epoch {epoch} all loss {all_loss} aa cord loss {val_aa_l2_loss} ; mol cord loss {val_mol_l2_loss} ; contrastive loss {val_aa_con_loss} ;")
+            
             if all_loss < val_loss and rank == 0:
                 val_loss = all_loss
                 torch.save({"state_dict":model.state_dict(), "epoch":epoch}, os.path.join(
