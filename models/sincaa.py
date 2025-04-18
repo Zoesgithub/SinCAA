@@ -221,4 +221,4 @@ class SinCAA(nn.Module):
             contract_neg=self.out_contrast(torch.cat([aa_pseudo_emb[:, None].expand(expand_shape), aa_pseudo_emb[None].expand(expand_shape)], -1)).squeeze(-1)
             contract_neg=contract_neg[torch.eye(contract_neg.shape[0]).to(contract_neg.device)==0]
             contrast_loss=torch.log(contract_pos.clamp(1e-8)).mean()+torch.log((1-contract_neg).clamp(1e-8)).mean()
-            return aa_pseudo_emb,neighbor_pseudo_emb, (rec_loss_mol+rec_loss_aa+rec_loss_n)/3, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), (mol_acc).item(), -contrast_loss*10
+            return aa_pseudo_emb,neighbor_pseudo_emb, (rec_loss_mol+rec_loss_aa+rec_loss_n)/3, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), (mol_acc).item(), -contrast_loss
