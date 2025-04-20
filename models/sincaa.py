@@ -5,7 +5,7 @@ from typing import Tuple
 from utils.rigid_utils import RobustRigid
 from utils.data_utils import collate_fn
 
-def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm"):
+def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm", num_inner_l=2):
     convs = nn.ModuleList()
     for _ in range(num_layers):
         net = gnn.Sequential('x, edge_index, edge_attr', [
@@ -13,16 +13,9 @@ def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm"):
             nn.Linear(channels, channels),
             nn.PReLU(),
             nn.Linear(channels, channels),
-        )), 'x, edge_index, edge_attr -> x'),
-        (gnn.GINEConv(nn.Sequential(
-            nn.Linear(channels, channels),
-            nn.PReLU(),
-            nn.Linear(channels, channels),
-        )), 'x, edge_index, edge_attr -> x'),
+        )), 'x, edge_index, edge_attr -> x') for _ in range(num_inner_l)
        
     ])
-       
-
         convs.append(gnn.GPSConv(channels, net, heads=num_head,
                                  attn_type=attn_type, norm=norm, act="PReLU"))
     return convs
@@ -81,11 +74,13 @@ class SinCAA(nn.Module):
             self.decoder=gnn.models.GIN(args.model_channels, args.model_channels, args.decoder_layers)
         else:
             self.decoder=None
+        if not hasattr(args, "num_inner_l"):
+            args.num_inner_l=2
         if hasattr(args, "model") and args.model=="GAT":
             self.topological_net=gnn.models.GAT(args.model_channels, args.model_channels, args.topological_net_layers)
             self.model="GAT"
         else:
-            self.topological_net=construct_gps(args.topological_net_layers, args.model_channels, num_head=args.num_head, attn_type="multihead", norm=args.norm)
+            self.topological_net=construct_gps(args.topological_net_layers, args.model_channels, num_head=args.num_head, attn_type="multihead", norm=args.norm, num_inner_l=args.num_inner_l)
             self.model="GPS"
         
         self.node_int_embeder = nn.ModuleList([nn.Embedding(

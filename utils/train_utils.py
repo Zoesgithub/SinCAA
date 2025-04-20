@@ -208,7 +208,7 @@ def inner_trainer(rank, world_size, args):
             else:
                 similarity_loss=rec_loss.new_zeros(1)
             
-            loss =aa_contrastive_loss+rec_loss*2+similarity_loss
+            loss =aa_contrastive_loss*0.001+rec_loss+similarity_loss
             if args.aba:
                 loss=rec_loss
             loss.backward()
@@ -220,7 +220,7 @@ def inner_trainer(rank, world_size, args):
                 exit()
             if i % args.logger_step == 0 and rank==0:
                 logger.info(
-                    f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.item()} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()} ; acc {pad_acc}")
+                    f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.sum().item()} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()} ; acc {pad_acc}")
             if i%1000==0 and rank == 0:
                 torch.save({"state_dict":model.state_dict(), "epoch":epoch}, os.path.join(
                     save_path, "model.statedict.tmp"))
@@ -259,7 +259,7 @@ def inner_trainer(rank, world_size, args):
                     if args.aba:
                         val_aa_con_loss+=rec_loss.item()
                     else:
-                        val_aa_con_loss += aa_contrastive_loss.item()+rec_loss.item()*2
+                        val_aa_con_loss += aa_contrastive_loss.item()*0.001+rec_loss.item()
                     #val_acc += acc.float().sum().item()
                     #val_num += aa_pseudo_emb.shape[0]
                 

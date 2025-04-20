@@ -35,6 +35,7 @@ if __name__=="__main__":
     parser.add_argument("--norm", type=str, choices=["BatchNorm", "GraphNorm", "LayerNorm", "None"], default=None)
     parser.add_argument("--aba", action='store_true')
     parser.add_argument("--model",  type=str, choices=["GPS"], default="GPS")
+    parser.add_argument("--num_inner_l",  type=int,default=2)
     
     args=parser.parse_args()
     if args.norm=="None":
