@@ -171,8 +171,8 @@ def inner_trainer(rank, world_size, args):
    
     optimizer = torch.optim.Adam(model.parameters(), args.learning_rate)
     
-    scheduler = lambda epoch :( 1 + np.cos((epoch) * np.pi / args.num_epochs) ) * 0.5
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=scheduler)
+    #scheduler = lambda epoch :( 1 + np.cos((epoch) * np.pi / args.num_epochs) ) * 0.5
+    #scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=scheduler)
     def get_neighbor_mask(iindex,jindex, map_dict):
         ret=torch.zeros([len(iindex), len(jindex)])
         for i in range(len(ret)):
@@ -181,7 +181,7 @@ def inner_trainer(rank, world_size, args):
                     ret[i,j]=1
         return ret
     
-    
+    weight_contractive=0.1
     for epoch in range(start_epoch,args.num_epochs):
         print(optimizer.param_groups[0]['lr'])
         for i, d in enumerate(train_data_loader):
@@ -208,7 +208,7 @@ def inner_trainer(rank, world_size, args):
             else:
                 similarity_loss=rec_loss.new_zeros(1)
             
-            loss =aa_contrastive_loss*0.001+rec_loss+similarity_loss
+            loss =aa_contrastive_loss*weight_contractive+rec_loss+similarity_loss
             if args.aba:
                 loss=rec_loss
             loss.backward()
@@ -226,7 +226,7 @@ def inner_trainer(rank, world_size, args):
                     save_path, "model.statedict.tmp"))
             
             
-        scheduler.step()
+        #scheduler.step()
         if True:
             logger.info(f"Finish training for epoch {epoch}")
             val_aa_l2_loss = 0
@@ -259,7 +259,7 @@ def inner_trainer(rank, world_size, args):
                     if args.aba:
                         val_aa_con_loss+=rec_loss.item()
                     else:
-                        val_aa_con_loss += aa_contrastive_loss.item()*0.001+rec_loss.item()
+                        val_aa_con_loss += aa_contrastive_loss.item()*weight_contractive+rec_loss.item()
                     #val_acc += acc.float().sum().item()
                     #val_num += aa_pseudo_emb.shape[0]
                 
