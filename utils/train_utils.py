@@ -181,7 +181,7 @@ def inner_trainer(rank, world_size, args):
                     ret[i,j]=1
         return ret
     
-    weight_contractive=0.1
+    weight_contractive=0.01
     for epoch in range(start_epoch,args.num_epochs):
         print(optimizer.param_groups[0]['lr'])
         for i, d in enumerate(train_data_loader):
