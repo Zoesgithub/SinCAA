@@ -209,9 +209,7 @@ class SinCAA(nn.Module):
         if self.aba:
             return aa_pseudo_emb, aa_pseudo_emb, (rec_loss_mol+rec_loss_aa)/2, rec_loss_aa.new_zeros(len(aa_pseudo_emb)), (mol_acc).item(), rec_loss_aa.new_zeros(len(aa_pseudo_emb))
         else:
-            #neighbor_data["batch_id"]=neighbor_data["node_residue_index"]
-            _, aa_pseudo_emb, _, _= self.calculate_topol_emb(aa_data, add_mask=False)
-            _, neighbor_pseudo_emb, _, _= self.calculate_topol_emb(neighbor_data, add_mask=False)
+            _, neighbor_pseudo_emb, _, _= self.calculate_topol_emb(neighbor_data, add_mask=True)
             contract_pos=self.out_contrast(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1)
             expand_shape=(aa_pseudo_emb.shape[0], neighbor_pseudo_emb.shape[0], neighbor_pseudo_emb.shape[-1])
             contract_neg=self.out_contrast(torch.cat([aa_pseudo_emb[:, None].expand(expand_shape), aa_pseudo_emb[None].expand(expand_shape)], -1)).squeeze(-1)
