@@ -101,6 +101,8 @@ class SinCAA(nn.Module):
         self.aba=args.aba
         print(self.aba)
         if self.aba==0:
+            self.sim_decoder=gnn.models.GIN(args.model_channels, args.model_channels, 1)
+            self.out_emb=nn.Sequential(nn.Linear(args.model_channels, args.model_channels), nn.ReLU(), nn.Linear(args.model_channels, args.model_channels))
             self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
             self.out_contrast=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
         
@@ -175,15 +177,16 @@ class SinCAA(nn.Module):
                 x = conv(x, edge_index, edge_attr=edge_attr,batch=batch_id)
             
                 
-                
-        ret_emb=torch.scatter_reduce(x.new_zeros(feats["batch_id"].max().long().item()+1, x.shape[-1]), 0, feats["batch_id"][..., None].expand_as(x).long(), x, include_self=False, reduce="sum")
+        if self.aba==0:
+            emb_x=self.sim_decoder(x, edge_index)
+        else:
+            emb_x=x
+        ret_emb=torch.scatter_reduce(emb_x.new_zeros(feats["batch_id"].max().long().item()+1, emb_x.shape[-1]), 0, feats["batch_id"][..., None].expand_as(emb_x).long(), emb_x, include_self=False, reduce="sum")
+        ret_emb=self.out_emb(ret_emb)
         acc=0
         num_round=1
         for i in range(num_round):
-            #emask, eedge_mask=self.generate_mask(x, edge_index,batch_id, 0.3)
-            tx=x#*emask
-            #edge_mask=eedge_mask*edge_mask
-            #mask=emask*mask
+            tx=x
             if self.decoder is not None:
                 tx=self.decoder(tx, edge_index,)
             recovery_info=self.recovery_info(tx[mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
