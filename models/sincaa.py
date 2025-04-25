@@ -101,8 +101,6 @@ class SinCAA(nn.Module):
         self.aba=args.aba
         print(self.aba)
         if self.aba==0:
-            self.sim_decoder=gnn.models.GIN(args.model_channels, args.model_channels, 1)
-            self.out_emb=nn.Sequential(nn.Linear(args.model_channels, args.model_channels), nn.ReLU(), nn.Linear(args.model_channels, args.model_channels))
             self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
             self.out_contrast=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
         
@@ -161,8 +159,7 @@ class SinCAA(nn.Module):
         assert edge_index.shape[-1]==0 or edge_index.max()<len(x), f"{edge_index.max} {x.shape}"
         xs=[]
         recovery_info_loss=0
-        #part_info=feats["part_info"]
-        #dx_loss=0
+     
         if self.model=="GAT":
             x=self.topological_net(x, edge_index,  edge_attr=edge_emb,batch=batch_id)
 
@@ -177,12 +174,10 @@ class SinCAA(nn.Module):
                 x = conv(x, edge_index, edge_attr=edge_attr,batch=batch_id)
             
                 
-        if self.aba==0:
-            emb_x=self.sim_decoder(x, edge_index)
-        else:
-            emb_x=x
-        ret_emb=torch.scatter_reduce(emb_x.new_zeros(feats["batch_id"].max().long().item()+1, emb_x.shape[-1]), 0, feats["batch_id"][..., None].expand_as(emb_x).long(), emb_x, include_self=False, reduce="sum")
-        ret_emb=self.out_emb(ret_emb)
+        
+        emb_x=x
+        ret_emb=torch.scatter_reduce(emb_x.new_zeros(feats["batch_id"].max().long().item()+1, emb_x.shape[-1]), 0, feats["batch_id"][..., None].expand_as(emb_x).long(), emb_x, include_self=False, reduce="mean")
+        
         acc=0
         num_round=1
         for i in range(num_round):
