@@ -100,9 +100,10 @@ class SinCAA(nn.Module):
         self.feat_dropout_rate=0.5
         self.aba=args.aba
         print(self.aba)
-        if not self.aba:
+        if self.aba==0:
             self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
             self.out_contrast=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
+        
         
     def get_num_params(self):
         total=sum(p.numel() for p in self.parameters())
@@ -204,16 +205,17 @@ class SinCAA(nn.Module):
 
     def forward(self, aa_data, mol_data, neighbor_data, add_mask):
         assert add_mask
+        _, mol_pseudo_emb, rec_loss_mol, mol_acc= self.calculate_topol_emb(mol_data, add_mask=add_mask)
+        if self.aba==2: # use only zinc
+            return mol_pseudo_emb, mol_pseudo_emb, rec_loss_mol, rec_loss_mol.new_zeros(len(mol_pseudo_emb)), (mol_acc).item(), rec_loss_mol.new_zeros(len(mol_pseudo_emb))
         _, aa_pseudo_emb, rec_loss_aa, aa_acc= self.calculate_topol_emb(aa_data, add_mask=True)
-        _, _, rec_loss_mol, mol_acc= self.calculate_topol_emb(mol_data, add_mask=add_mask)
-        if self.aba:
+        if self.aba==1: # use both zinc and aa
             return aa_pseudo_emb, aa_pseudo_emb, (rec_loss_mol+rec_loss_aa)/2, rec_loss_aa.new_zeros(len(aa_pseudo_emb)), (mol_acc).item(), rec_loss_aa.new_zeros(len(aa_pseudo_emb))
-        else:
-            _, neighbor_pseudo_emb, _, _= self.calculate_topol_emb(neighbor_data, add_mask=False)
-            _, aa_pseudo_emb, _, _= self.calculate_topol_emb(aa_data, add_mask=False)
-            contract_pos=self.out_contrast(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1)
-            expand_shape=(aa_pseudo_emb.shape[0], neighbor_pseudo_emb.shape[0], neighbor_pseudo_emb.shape[-1])
-            contract_neg=self.out_contrast(torch.cat([aa_pseudo_emb[:, None].expand(expand_shape), aa_pseudo_emb[None].expand(expand_shape)], -1)).squeeze(-1)
-            contract_neg=contract_neg[torch.eye(contract_neg.shape[0]).to(contract_neg.device)==0]
-            contrast_loss=torch.log(contract_pos.clamp(1e-8)).mean()+torch.log((1-contract_neg).clamp(1e-8)).mean()
-            return aa_pseudo_emb,neighbor_pseudo_emb, (rec_loss_mol+rec_loss_aa)/2, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), (mol_acc).item(), -contrast_loss
+        _, neighbor_pseudo_emb, _, _= self.calculate_topol_emb(neighbor_data, add_mask=False)
+        _, aa_pseudo_emb, _, _= self.calculate_topol_emb(aa_data, add_mask=False)
+        contract_pos=self.out_contrast(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1)
+        expand_shape=(aa_pseudo_emb.shape[0], neighbor_pseudo_emb.shape[0], neighbor_pseudo_emb.shape[-1])
+        contract_neg=self.out_contrast(torch.cat([aa_pseudo_emb[:, None].expand(expand_shape), aa_pseudo_emb[None].expand(expand_shape)], -1)).squeeze(-1)
+        contract_neg=contract_neg[torch.eye(contract_neg.shape[0]).to(contract_neg.device)==0]
+        contrast_loss=torch.log(contract_pos.clamp(1e-8)).mean()+torch.log((1-contract_neg).clamp(1e-8)).mean()
+        return aa_pseudo_emb,neighbor_pseudo_emb, (rec_loss_mol+rec_loss_aa)/2, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), (mol_acc).item(), -contrast_loss

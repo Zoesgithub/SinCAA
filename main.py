@@ -33,7 +33,7 @@ if __name__=="__main__":
     parser.add_argument("--num_workers", type=int, help="num of workers to load data", default=5)
     parser.add_argument("--max_combine", type=int, help="", default=4)
     parser.add_argument("--norm", type=str, choices=["BatchNorm", "GraphNorm", "LayerNorm", "None"], default=None)
-    parser.add_argument("--aba", action='store_true')
+    parser.add_argument("--aba", type=int, choices=[0,1,2], default=0)
     parser.add_argument("--model",  type=str, choices=["GPS"], default="GPS")
     parser.add_argument("--num_inner_l",  type=int,default=2)
     parser.add_argument("--cont_weight",  type=float,default=0.01)
