@@ -164,6 +164,7 @@ def inner_trainer(rank, world_size, args):
         print(f"loading from {args.load_path} ...")
         param=torch.load(args.load_path)
         model.load_state_dict(param["state_dict"])
+        start_epoch=param["epoch"]+1
         del param
     val_loss = 99999
     train_map_between_neighbors=train_data.build_neighbor_key()
