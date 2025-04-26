@@ -101,8 +101,8 @@ class SinCAA(nn.Module):
         self.aba=args.aba
         print(self.aba)
         if self.aba==0:
-            self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
-            self.out_contrast=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
+            self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, args.model_channels*2, ), nn.ReLU(), nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
+            self.out_contrast=nn.Sequential(nn.Linear(args.model_channels*2, args.model_channels*2, ), nn.ReLU(), nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
         
         
     def get_num_params(self):
