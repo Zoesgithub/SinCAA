@@ -209,8 +209,8 @@ class SinCAA(nn.Module):
         _, aa_pseudo_emb, rec_loss_aa, aa_acc= self.calculate_topol_emb(aa_data, add_mask=True)
         if self.aba==1: # use both zinc and aa
             return aa_pseudo_emb, aa_pseudo_emb, (rec_loss_mol+rec_loss_aa)/2, rec_loss_aa.new_zeros(len(aa_pseudo_emb)), (mol_acc).item(), rec_loss_aa.new_zeros(len(aa_pseudo_emb))
-        _, neighbor_pseudo_emb, _, _= self.calculate_topol_emb(neighbor_data, add_mask=False)
-        _, aa_pseudo_emb, _, _= self.calculate_topol_emb(aa_data, add_mask=False)
+        _, neighbor_pseudo_emb, _, _= self.calculate_topol_emb(neighbor_data, add_mask=True)
+        #_, aa_pseudo_emb, _, _= self.calculate_topol_emb(aa_data, add_mask=False)
         contract_pos=self.out_contrast(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1)
         expand_shape=(aa_pseudo_emb.shape[0], neighbor_pseudo_emb.shape[0], neighbor_pseudo_emb.shape[-1])
         contract_neg=self.out_contrast(torch.cat([aa_pseudo_emb[:, None].expand(expand_shape), aa_pseudo_emb[None].expand(expand_shape)], -1)).squeeze(-1)
