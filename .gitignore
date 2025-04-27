@@ -6,6 +6,7 @@ data
 experiments
 script
 trash
+tmp
 # C extensions
 *.so
 
