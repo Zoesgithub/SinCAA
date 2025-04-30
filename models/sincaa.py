@@ -1,11 +1,10 @@
 import torch.nn as nn
 import torch_geometric.nn as gnn
 import torch
-from typing import Tuple
-from utils.rigid_utils import RobustRigid
 from utils.data_utils import collate_fn
 
 def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm", num_inner_l=2):
+    assert norm=="GraphNorm"
     convs = nn.ModuleList()
     for _ in range(num_layers):
         net = gnn.Sequential('x, edge_index, edge_attr', [
@@ -82,7 +81,7 @@ class SinCAA(nn.Module):
         else:
             self.topological_net=construct_gps(args.topological_net_layers, args.model_channels, num_head=args.num_head, attn_type="multihead", norm=args.norm, num_inner_l=args.num_inner_l)
             self.model="GPS"
-        
+        assert args.norm=='GraphNorm'
         self.node_int_embeder = nn.ModuleList([nn.Embedding(
             100, args.model_channels) for _ in range(3)])
         self.edge_embeder = nn.ModuleList(
@@ -101,8 +100,8 @@ class SinCAA(nn.Module):
         self.aba=args.aba
         print(self.aba)
         if self.aba==0:
-            self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, args.model_channels*2, ), nn.ReLU(), nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
-            self.out_contrast=nn.Sequential(nn.Linear(args.model_channels*2, args.model_channels*2, ), nn.ReLU(), nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
+            self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
+            self.out_contrast=nn.Sequential(nn.Linear(args.model_channels, args.model_channels),nn.ReLU(), nn.Linear(args.model_channels, args.model_channels))
         
         
     def get_num_params(self):
@@ -153,6 +152,7 @@ class SinCAA(nn.Module):
         # gps forward
         x = node_emb
         mask, edge_mask=self.generate_mask(x, edge_index, batch_id, add_mask=add_mask)
+        
         x=x*mask
         inpx=x
         assert edge_index.max()==x.shape[0]-1, f"{edge_index.shape} {x.shape}"
@@ -206,14 +206,19 @@ class SinCAA(nn.Module):
         _, mol_pseudo_emb, rec_loss_mol, mol_acc= self.calculate_topol_emb(mol_data, add_mask=add_mask)
         if self.aba==2: # use only zinc
             return mol_pseudo_emb, mol_pseudo_emb, rec_loss_mol, rec_loss_mol.new_zeros(len(mol_pseudo_emb)), (mol_acc).item(), rec_loss_mol.new_zeros(len(mol_pseudo_emb))
-        _, aa_pseudo_emb, rec_loss_aa, aa_acc= self.calculate_topol_emb(aa_data, add_mask=True)
+        
         if self.aba==1: # use both zinc and aa
+            _, aa_pseudo_emb, rec_loss_aa, aa_acc= self.calculate_topol_emb(aa_data, add_mask=True)
             return aa_pseudo_emb, aa_pseudo_emb, (rec_loss_mol+rec_loss_aa)/2, rec_loss_aa.new_zeros(len(aa_pseudo_emb)), (mol_acc).item(), rec_loss_aa.new_zeros(len(aa_pseudo_emb))
-        _, neighbor_pseudo_emb, rec_loss_nei, _= self.calculate_topol_emb(neighbor_data, add_mask=True)
-        #_, aa_pseudo_emb, _, _= self.calculate_topol_emb(aa_data, add_mask=False)
-        contract_pos=self.out_contrast(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1)
-        expand_shape=(aa_pseudo_emb.shape[0], neighbor_pseudo_emb.shape[0], neighbor_pseudo_emb.shape[-1])
-        contract_neg=self.out_contrast(torch.cat([aa_pseudo_emb[:, None].expand(expand_shape), aa_pseudo_emb[None].expand(expand_shape)], -1)).squeeze(-1)
-        contract_neg=contract_neg[torch.eye(contract_neg.shape[0]).to(contract_neg.device)==0]
-        contrast_loss=torch.log(contract_pos.clamp(1e-8)).mean()+torch.log((1-contract_neg).clamp(1e-8)).mean()
-        return aa_pseudo_emb,neighbor_pseudo_emb, (rec_loss_mol+rec_loss_aa+rec_loss_nei)/3, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), (mol_acc).item(), -contrast_loss
+        merge_d=collate_fn([[aa_data], [neighbor_data]])[0]
+        
+        _, merge_pseudo_emb, rec_loss_aa, aa_acc= self.calculate_topol_emb(merge_d, add_mask=True)
+        assert merge_pseudo_emb.shape[0]==mol_pseudo_emb.shape[0]*2,f"{merge_pseudo_emb.shape} {mol_pseudo_emb.shape}"
+        
+        aa_pseudo_emb=nn.functional.normalize( self.out_contrast(merge_pseudo_emb[:len(merge_pseudo_emb)//2]))
+        neighbor_pseudo_emb=nn.functional.normalize( self.out_contrast(merge_pseudo_emb[len(merge_pseudo_emb)//2:]))
+        contract=torch.einsum("ab,cb->ac", aa_pseudo_emb, neighbor_pseudo_emb)/0.1
+        
+        contrast_loss=nn.functional.cross_entropy(contract, torch.arange(contract.shape[0]).to(contract.device))
+        acc=(contract.argmax(-1)==torch.arange(contract.shape[0]).to(contract.device)).float().sum()/contract.shape[0]
+        return aa_pseudo_emb,neighbor_pseudo_emb, (rec_loss_mol+rec_loss_aa)/2, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), (acc).item(), contrast_loss
