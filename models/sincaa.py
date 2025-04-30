@@ -214,10 +214,11 @@ class SinCAA(nn.Module):
         _, merge_pseudo_emb, rec_loss_aa, aa_acc= self.calculate_topol_emb(merge_d, add_mask=True)
         assert merge_pseudo_emb.shape[0]==mol_pseudo_emb.shape[0]*2,f"{merge_pseudo_emb.shape} {mol_pseudo_emb.shape}"
         
+        mask=aa_data["sim"]>0
         aa_pseudo_emb=nn.functional.normalize( merge_pseudo_emb[:len(merge_pseudo_emb)//2])
         neighbor_pseudo_emb=nn.functional.normalize( merge_pseudo_emb[len(merge_pseudo_emb)//2:])
         contract=torch.einsum("ab,cb->ac", aa_pseudo_emb, neighbor_pseudo_emb)/0.1
         
-        contrast_loss=nn.functional.cross_entropy(contract, torch.arange(contract.shape[0]).to(contract.device))
-        acc=(contract.argmax(-1)==torch.arange(contract.shape[0]).to(contract.device)).float().sum()/contract.shape[0]
+        contrast_loss=nn.functional.cross_entropy(contract, torch.arange(contract.shape[0]).to(contract.device), reduction=None)[mask]
+        acc=(contract.argmax(-1)[mask]==torch.arange(contract.shape[0]).to(contract.device)[mask]).float().sum()/max(mask.float().sum(), 1)
         return aa_pseudo_emb,neighbor_pseudo_emb, (rec_loss_mol+rec_loss_aa)/2, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), (acc).item(), contrast_loss
