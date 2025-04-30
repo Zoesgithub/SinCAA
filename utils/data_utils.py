@@ -145,6 +145,7 @@ class ChainDataset(MolDataset):
         aa_data, nei_data=collate_fn([[a,b] for a,b in zip(aa_data,nei_data)])
        
         aa_data["sim"]=torch.tensor(sims).reshape(-1)
+        aa_data["batch_sim"]=torch.tensor(min(sims)).reshape(-1)
         aa_data["index"]=torch.tensor(indexs).reshape(-1)
         
         aa_data["batch_id"]=np.zeros(len(aa_data["nodes_int_feats"]), dtype=int)

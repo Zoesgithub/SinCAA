@@ -87,27 +87,20 @@ def inner_trainer(rank, world_size, args):
                 for k in Dict:
                     if hasattr(Dict[k], "cuda"):
                         Dict[k] = Dict[k].to(rank)
-            aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, pad_acc, aa_contrastive_loss= model.forward(
+            rec_loss, aa_contrastive_loss, pad_acc= model.forward(
                 aa_data, mol_data, aa_neighbor_data, True)
           
-            if aa_data["sim"].shape==similarity.shape:
-                similarity_loss=-((torch.log(similarity.clamp(1e-6))*aa_data["sim"]+torch.log((1-similarity).clamp(1e-6))*(1-aa_data["sim"])).mean()+(torch.log(aa_data["sim"].clamp(1e-6))*aa_data["sim"]+torch.log((1-aa_data["sim"]).clamp(1e-6))*(1-aa_data["sim"]))).mean()
-            else:
-                similarity_loss=rec_loss.new_zeros(1)
-            
-            loss =aa_contrastive_loss*weight_contractive+rec_loss+similarity_loss
+            loss =aa_contrastive_loss*weight_contractive+rec_loss
             if args.aba:
                 loss=rec_loss
             loss.backward()
             synchronize_gradients(model)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.2)
             optimizer.step()
-            if torch.isnan(loss):
-                print(aa_data["sim"], aa_pseudo_emb)
-                exit()
+           
             if i % args.logger_step == 0 and rank==0:
                 logger.info(
-                    f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.sum().item()} ; rec loss {rec_loss.item()} ; sim loss {similarity_loss.item()} ; acc {pad_acc}")
+                    f"epcoh {epoch} step {i} contrastive loss {aa_contrastive_loss.sum().item()} ; rec loss {rec_loss.item()} ; acc {pad_acc}")
             if i%1000==0 and rank == 0:
                 torch.save({"state_dict":model.state_dict(), "epoch":epoch}, os.path.join(
                     save_path, "model.statedict.tmp"))
@@ -131,7 +124,7 @@ def inner_trainer(rank, world_size, args):
                         for k in Dict:
                             if hasattr(Dict[k], "cuda"):
                                 Dict[k] = Dict[k].to(rank)
-                    aa_pseudo_emb, neighbor_pseudo_emb, rec_loss, similarity, _, aa_contrastive_loss= model.forward(
+                    rec_loss, _, aa_contrastive_loss, _= model.forward(
                         aa_data, mol_data, aa_neighbor_data, True)
                     
                     if args.aba:
