@@ -5,29 +5,25 @@ import random
 import numpy as np
 import torch
 import hashlib
-import os
 from utils.amino_acid import AminoAcid
 import utils.data_constants as ud
 from openfold.np.residue_constants import restype_3to1, resname_to_idx
+
 smiles_to_idx={Chem.MolToSmiles(Chem.MolFromSequence(restype_3to1[_], flavor=0)):resname_to_idx[_] for _ in restype_3to1}
 
 def myHash(text: str):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-
 def get_graph(aa_name=None, smiles=None, max_level=4):
-    if smiles is not None:
-        
+    if smiles is not None:        
         aa_name=myHash(smiles)
         ligand_path=None
     else:
-        
         ligand_path=ud.cache_data_path
-    
-    
+
     ret=AminoAcid(aa_name=aa_name, aa_idx=0, smiles=smiles, ligand_path=ligand_path).get_graph_with_gt()
-    return ret#add_part_info(ret, max_level)
+    return ret
     
 
 
@@ -39,9 +35,6 @@ def load_conf(path, smiles, max_level=4):
     else:
         ret["aa_label"]=torch.tensor( -1).reshape(-1)
     return ret
-    
-
-
 
 
 class MolDataset(Dataset):
@@ -72,8 +65,6 @@ class MolDataset(Dataset):
         self.mol_index=list(range(len(self.mol_data)))[mol_step*rank:mol_step*rank+mol_step]
         self.istrain=istrain
     
-        
-        
     def build_neighbor_key(self):
         map_str_to_idx={}
         for i,v in enumerate(self.aa_smiles):
@@ -120,8 +111,8 @@ class ChainDataset(MolDataset):
         idx=random.randint(0, len(neighbors)-1)
         neighbor_aa = neighbors[idx]
         sim=float(self.aa_similarity[index].split(";")[idx])
-        if sim==0:
-            print(self.aa_similarity[index], mid_aa)
+        #if sim==0:
+        #    print(self.aa_similarity[index], mid_aa)
         def remove_last_atom(data):
             ret={
                 "nodes_int_feats":data["nodes_int_feats"][:-1],
@@ -227,10 +218,9 @@ def collate_fn(batch):
             
         for k in ret:
             ret[k] = torch.cat(ret[k], 0)
-        #edge_filter=ret["edges"]
-        #edge_filter=(edge_filter[..., 0]<num_node)&(edge_filter[..., 1]<num_node)
+       
         ret["edges"] = ret["edges"].transpose(1, 0)
-        #ret["edge_attrs"]=ret["edge_attrs"]#[edge_filter]
+       
         if part_info is not None:
             ret["part_info"]=part_info
         return ret
