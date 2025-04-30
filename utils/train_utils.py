@@ -124,7 +124,7 @@ def inner_trainer(rank, world_size, args):
                         for k in Dict:
                             if hasattr(Dict[k], "cuda"):
                                 Dict[k] = Dict[k].to(rank)
-                    rec_loss, _, aa_contrastive_loss, _= model.forward(
+                    rec_loss, aa_contrastive_loss, _= model.forward(
                         aa_data, mol_data, aa_neighbor_data, True)
                     
                     if args.aba:
