@@ -101,7 +101,6 @@ class SinCAA(nn.Module):
         print(self.aba)
         if self.aba==0:
             self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
-            self.out_contrast=nn.Sequential(nn.Linear(args.model_channels, args.model_channels),nn.ReLU(), nn.Linear(args.model_channels, args.model_channels))
         
         
     def get_num_params(self):
@@ -215,8 +214,8 @@ class SinCAA(nn.Module):
         _, merge_pseudo_emb, rec_loss_aa, aa_acc= self.calculate_topol_emb(merge_d, add_mask=True)
         assert merge_pseudo_emb.shape[0]==mol_pseudo_emb.shape[0]*2,f"{merge_pseudo_emb.shape} {mol_pseudo_emb.shape}"
         
-        aa_pseudo_emb=nn.functional.normalize( self.out_contrast(merge_pseudo_emb[:len(merge_pseudo_emb)//2]))
-        neighbor_pseudo_emb=nn.functional.normalize( self.out_contrast(merge_pseudo_emb[len(merge_pseudo_emb)//2:]))
+        aa_pseudo_emb=nn.functional.normalize( merge_pseudo_emb[:len(merge_pseudo_emb)//2])
+        neighbor_pseudo_emb=nn.functional.normalize( merge_pseudo_emb[len(merge_pseudo_emb)//2:])
         contract=torch.einsum("ab,cb->ac", aa_pseudo_emb, neighbor_pseudo_emb)/0.1
         
         contrast_loss=nn.functional.cross_entropy(contract, torch.arange(contract.shape[0]).to(contract.device))
