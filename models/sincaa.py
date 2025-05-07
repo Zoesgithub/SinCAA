@@ -212,11 +212,8 @@ class SinCAA(nn.Module):
         x=x[:num_nri//2]
         mask_x=mask[:num_nri//2]
        
-       
-        y_neg=torch.cat([y[1:], y[:1]], 0)
-        y_neg_mask=torch.cat([mask_y[1:], mask_y[:1]], 0)
-        neg=((torch.einsum("lab,lcb->lac", x, y_neg.detach())-y_neg_mask[..., None, :]*10).max(-1).values*(1-mask_x)).clamp(-2, 0.3).sum(-1)
-        contrast_loss=contrast_loss-neg.mean()
+        neg=((torch.einsum("lab,lcb->lac", x, y.detach())-mask_y[..., None, :]*10).max(-1).values*(1-mask_x)).clamp(0.3).sum(-1) # maintain diversity
+        contrast_loss=contrast_loss+neg.mean()
         if add_mask:
             return (rec_loss_mol+rec_loss_aa)/2, contrast_loss, mol_acc.item()
         return rec_loss_mol, contrast_loss, mol_acc.item()
