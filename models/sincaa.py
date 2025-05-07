@@ -164,8 +164,12 @@ class SinCAA(nn.Module):
             _, rec_loss_aa, aa_acc= self.calculate_topol_emb(aa_data, add_mask=True)
             return (rec_loss_mol+rec_loss_aa)/2, rec_loss_mol.new_zeros(rec_loss_mol.shape), mol_acc.item()
         merge_d=collate_fn([[aa_data], [neighbor_data]])[0]
-        add_mask=True #random.random()<0.5
+        add_mask=True
         emb_x, rec_loss_aa, aa_acc= self.calculate_topol_emb(merge_d, add_mask=add_mask)
+        # local loss
+        with torch.no_grad():
+            emb_x_ref, _, _= self.calculate_topol_emb(merge_d, add_mask=add_mask) # to calculate local loss
+        local_loss=sum([((a-b)**2).sum(-1).add(1e-8).sqrt().mean() for a,b in zip(emb_x,emb_x_ref)])/len(emb_x)
         emb_x=[_*self.generate_mask(_, merge_d["edges"], merge_d["batch_id"], add_mask=add_mask)[0] for _ in emb_x]
         emb_x=sum(emb_x)/len(emb_x)
         
@@ -184,35 +188,7 @@ class SinCAA(nn.Module):
       
         assert len(pred_batch.shape)==2, pred_batch.shape
       
-        contrast_loss=pred_batch.sum(-1).mean()#+pred_resi.sum(-1).mean()#nn.functional.cross_entropy((contract_batch-contract_batch[torch.arange(contract_batch.shape[0]).to(contract_batch.device)][..., None]).clamp(-0.1)/0.02, torch.arange(contract_batch.shape[0]).to(contract_batch.device) )+nn.functional.cross_entropy((contract_residue-contract_residue[ torch.arange(contract_residue.shape[0]).to(contract_residue.device)][..., None]).clamp(-0.1)/0.02, torch.arange(contract_residue.shape[0]).to(contract_residue.device) )
-        #nn.functional.cross_entropy(contract_batch, torch.arange(contract_batch.shape[0]).to(contract_batch.device), reduction='none')[merge_d["batch_sim"]>0].mean()+nn.functional.cross_entropy(contract_residue, torch.arange(contract_residue.shape[0]).to(contract_residue.device), reduction='none')[merge_d["sim"]>0].mean()
-        '''num_nri=merge_d["node_residue_index"].max()+1
-        emb_x=nn.functional.normalize(emb_x)
-        # batch to group
-        counts = torch.bincount(merge_d["node_residue_index"])
-        max_res_num = counts.max().item()
-        
-        sorted_res_idx, sort_idx = merge_d["node_residue_index"].sort()
-        res_counts = torch.bincount(sorted_res_idx)
-        res_offsets = torch.cat([torch.tensor([0], device=emb_x.device), res_counts.cumsum(0)[:-1]])
-        local_index = torch.arange(len(emb_x), device=emb_x.device) - res_offsets[sorted_res_idx]
-        residue_to_indices = sorted_res_idx * max_res_num + local_index
-        
-      
-        x=emb_x.new_zeros((num_nri*max_res_num, emb_x.shape[-1]))
-        mask=emb_x.new_ones((num_nri*max_res_num))
-        x[residue_to_indices]=emb_x
-        mask[residue_to_indices]=0
-        x=x.view(num_nri, max_res_num, -1)
-        mask=mask.view(num_nri, max_res_num)
-        y=x[num_nri//2:]
-        mask_y=mask[num_nri//2:]
-        x=x[:num_nri//2]
-        mask_x=mask[:num_nri//2]
-        y=torch.cat([y[1:], y[:1]], 0)
-        mask_y=torch.cat([mask_y[1:], mask_y[:1]], 0)
-        neg=((torch.einsum("lab,lcb->lac", x, y)-mask_y[..., None, :]*10).max(-1).values*(1-mask_x)).clamp(0.3).sum(-1) # maintain diversity
-        contrast_loss=contrast_loss+neg.mean()'''
+        contrast_loss=pred_batch.sum(-1).mean()+local_loss*0.1#+pred_resi.sum(-1).mean()#nn.functional.cross_entropy((contract_batch-contract_batch[torch.arange(contract_batch.shape[0]).to(contract_batch.device)][..., None]).clamp(-0.1)/0.02, torch.arange(contract_batch.shape[0]).to(contract_batch.device) )+nn.functional.cross_entropy((contract_residue-contract_residue[ torch.arange(contract_residue.shape[0]).to(contract_residue.device)][..., None]).clamp(-0.1)/0.02, torch.arange(contract_residue.shape[0]).to(contract_residue.device) )
         if add_mask:
             return (rec_loss_mol+rec_loss_aa)/2, contrast_loss, mol_acc.item()
         return rec_loss_mol, contrast_loss, mol_acc.item()
