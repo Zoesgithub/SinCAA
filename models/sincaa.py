@@ -19,52 +19,6 @@ def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm", n
         convs.append(gnn.GPSConv(channels, net, heads=num_head,
                                  attn_type=attn_type, norm=norm, act="PReLU"))
     return convs
-
-def construct_gps_gin(num_layers, channels, attn_type, num_head, norm="GraphNorm"):
-    convs = nn.ModuleList()
-    for _ in range(num_layers):
-        net = gnn.Sequential('x, edge_index', [
-        (gnn.GINConv(nn.Sequential(
-            nn.Linear(channels, channels),
-            nn.PReLU(),
-            nn.Linear(channels, channels),
-        )), 'x, edge_index -> x'),
-        (gnn.GINConv(nn.Sequential(
-            nn.Linear(channels, channels),
-            nn.PReLU(),
-            nn.Linear(channels, channels),
-        )), 'x, edge_index -> x'),
-       
-    ])
-
-        convs.append(gnn.GPSConv(channels, net, heads=num_head,
-                                 attn_type=attn_type, norm=norm, act="PReLU"))
-    return convs
-
-def construct_gin(num_layers, channels):
-    convs = nn.ModuleList()
-    for _ in range(num_layers):
-        net = nn.Sequential(
-            nn.Linear(channels, channels),
-            nn.PReLU(),
-            nn.Linear(channels, channels),
-        )
-
-        convs.append(gnn.GINConv(net))
-    return convs
-
-def construct_gine(num_layers, channels):
-    convs = nn.ModuleList()
-    for _ in range(num_layers):
-        net = nn.Sequential(
-            nn.Linear(channels, channels),
-            nn.PReLU(),
-            nn.Linear(channels, channels),
-        )
-
-        convs.append(gnn.GINConv(net))
-    return convs
-
    
 
 class SinCAA(nn.Module):
@@ -101,7 +55,6 @@ class SinCAA(nn.Module):
         self.aba=args.aba
         print(self.aba)
         if self.aba==0:
-            #ƒsself.out_ln=nn.LayerNorm(args.model_channels)
             self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
         
         
@@ -262,9 +215,8 @@ class SinCAA(nn.Module):
        
         y_neg=torch.cat([y[1:], y[:1]], 0)
         y_neg_mask=torch.cat([mask_y[1:], mask_y[:1]], 0)
-        neg=((torch.cdist(x,y_neg.detach())+mask_x[..., None]*10+y_neg_mask[..., None, :]*10).min(-1).values*mask_x).sum(-1) # maintain local structure info
-        contrast_loss=contrast_loss+neg.mean()
-        #if use_mask:
+        neg=((torch.einsum("ab,cb->ac", x, y_neg)-y_neg_mask[..., None, :]*10).max(-1).values*(1-mask_x)).clamp(-2, 0.3).sum(-1)
+        contrast_loss=contrast_loss-neg.mean()
         if add_mask:
             return (rec_loss_mol+rec_loss_aa)/2, contrast_loss, mol_acc.item()
         return rec_loss_mol, contrast_loss, mol_acc.item()
