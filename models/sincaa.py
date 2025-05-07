@@ -54,6 +54,8 @@ class SinCAA(nn.Module):
         self.feat_dropout_rate=0.5
         self.aba=args.aba
         print(self.aba)
+        if self.aba==0:
+            self.sim_head=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
         
         
     def get_num_params(self):
@@ -174,21 +176,14 @@ class SinCAA(nn.Module):
         emb_x=sum(emb_x)/len(emb_x)
         
         emb_batch=torch.scatter_reduce(emb_x.new_zeros(merge_d["batch_id"].max().long().item()+1, emb_x.shape[-1]), 0, merge_d["batch_id"][..., None].expand_as(emb_x).long(), emb_x, include_self=False, reduce="mean")
+        expand_shape=[len(emb_batch)//2, len(emb_batch)//2, emb_batch.shape[-1]]
+        pair_sim=self.sim_head(torch.cat([emb_batch[:len(emb_batch)//2][:, None].expand(expand_shape),  emb_batch[len(emb_batch)//2:][None].expand(expand_shape)], -1)).squeeze(-1)
         
-        aa_pseudo_emb_batch=nn.functional.normalize( emb_batch[:len(emb_batch)//2])
-        neighbor_pseudo_emb_batch=nn.functional.normalize( emb_batch[len(emb_batch)//2:])
-        
-        contract_batch=torch.einsum("ab,cb->ac", aa_pseudo_emb_batch, neighbor_pseudo_emb_batch)
-        
-        assert len(contract_batch.shape)==2
-      
-        l_batch=torch.arange(contract_batch.shape[0]).to(contract_batch.device)
-      
-        pred_batch=(contract_batch-(contract_batch[l_batch, l_batch])[..., None]).clamp(-0.1)
-      
-        assert len(pred_batch.shape)==2, pred_batch.shape
-      
-        contrast_loss=pred_batch.sum(-1).mean()+local_loss*0.1#+pred_resi.sum(-1).mean()#nn.functional.cross_entropy((contract_batch-contract_batch[torch.arange(contract_batch.shape[0]).to(contract_batch.device)][..., None]).clamp(-0.1)/0.02, torch.arange(contract_batch.shape[0]).to(contract_batch.device) )+nn.functional.cross_entropy((contract_residue-contract_residue[ torch.arange(contract_residue.shape[0]).to(contract_residue.device)][..., None]).clamp(-0.1)/0.02, torch.arange(contract_residue.shape[0]).to(contract_residue.device) )
+        label=torch.eye(pair_sim.shape[0]).to(pair_sim.device).float()
+        assert label.shape==pair_sim.shape
+        contrast_loss=-label*torch.log(pair_sim.clamp(1e-6))-(1-label)*torch.log((1-pair_sim).clamp(1e-6))
+        contrast_loss=contrast_loss[label>0].mean()+contrast_loss[label<1].mean()
+        contrast_loss=contrast_loss+local_loss*0.1
         if add_mask:
             return (rec_loss_mol+rec_loss_aa)/2, contrast_loss, mol_acc.item()
         return rec_loss_mol, contrast_loss, mol_acc.item()
