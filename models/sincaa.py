@@ -2,7 +2,6 @@ import torch.nn as nn
 import torch_geometric.nn as gnn
 import torch
 from utils.data_utils import collate_fn
-import random
 
 
 def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm", num_inner_l=2):
@@ -174,6 +173,10 @@ class SinCAA(nn.Module):
                 else:
                     edge_attr=x[edge_index[0]]+x[edge_index[1]]
                 x = conv(x, edge_index, edge_attr=edge_attr,batch=batch_id)
+                if add_mask:
+                    xs.append(x)
+                else:
+                    xs=x
             
                 
         
@@ -185,13 +188,13 @@ class SinCAA(nn.Module):
                 tx=self.decoder(tx, edge_index,)
             recovery_info=self.recovery_info(tx[mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
             l=feats["nodes_int_feats"][mask.squeeze(-1)<1][..., :2].reshape(-1)
-            recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l, reduce=False)).sum()/max(recovery_info.shape[0], 1)
+            recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l,reduction='none' )).sum()/max(recovery_info.shape[0], 1)
             edge_recover_info=self.edge_recovery_info((tx[edge_index[0]]+tx[edge_index[1]])[edge_mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
             edge_l=edge_feats[edge_mask.squeeze(-1)<1].reshape(-1)
-            recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(edge_recover_info, edge_l, reduce=False)).sum()/max(edge_recover_info.shape[0], 1)
+            recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(edge_recover_info, edge_l, reduction='none' )).sum()/max(edge_recover_info.shape[0], 1)
             acc=acc+(recovery_info.argmax(-1)==l).float().sum()/max(l.shape[0],1)+(edge_recover_info.argmax(-1)==edge_l).float().sum()/max(edge_l.shape[0], 1)
         acc=acc/num_round/2
-        return x, recovery_info_loss, acc
+        return xs, recovery_info_loss, acc
     
 
     def inner_forward(self, data):
@@ -212,11 +215,13 @@ class SinCAA(nn.Module):
         merge_d=collate_fn([[aa_data], [neighbor_data]])[0]
         add_mask=True #random.random()<0.5
         emb_x, rec_loss_aa, aa_acc= self.calculate_topol_emb(merge_d, add_mask=add_mask)
+        emb_x=[_*self.generate_mask(_, merge_d["edges"], merge_d["batch_id"], add_mask=add_mask)[0] for _ in emb_x]
+        emb_x=sum(emb_x)/len(emb_x)
         
         emb_batch=torch.scatter_reduce(emb_x.new_zeros(merge_d["batch_id"].max().long().item()+1, emb_x.shape[-1]), 0, merge_d["batch_id"][..., None].expand_as(emb_x).long(), emb_x, include_self=False, reduce="mean")
         
         aa_pseudo_emb_batch=nn.functional.normalize( emb_batch[:len(emb_batch)//2])
-        neighbor_pseudo_emb_batch=nn.functional.normalize( emb_batch[len(emb_batch)//2:])
+        neighbor_pseudo_emb_batch=nn.functional.normalize( emb_batch[len(emb_batch)//2:]).detach()
         
         contract_batch=torch.einsum("ab,cb->ac", aa_pseudo_emb_batch, neighbor_pseudo_emb_batch)
         
@@ -224,14 +229,13 @@ class SinCAA(nn.Module):
       
         l_batch=torch.arange(contract_batch.shape[0]).to(contract_batch.device)
       
-        pred_batch=(contract_batch-(contract_batch[l_batch, l_batch])[..., None]).clamp(-0.02)
+        pred_batch=(contract_batch-(contract_batch[l_batch, l_batch])[..., None]).clamp(-0.1)
       
         assert len(pred_batch.shape)==2, pred_batch.shape
       
         contrast_loss=pred_batch.sum(-1).mean()#+pred_resi.sum(-1).mean()#nn.functional.cross_entropy((contract_batch-contract_batch[torch.arange(contract_batch.shape[0]).to(contract_batch.device)][..., None]).clamp(-0.1)/0.02, torch.arange(contract_batch.shape[0]).to(contract_batch.device) )+nn.functional.cross_entropy((contract_residue-contract_residue[ torch.arange(contract_residue.shape[0]).to(contract_residue.device)][..., None]).clamp(-0.1)/0.02, torch.arange(contract_residue.shape[0]).to(contract_residue.device) )
         #nn.functional.cross_entropy(contract_batch, torch.arange(contract_batch.shape[0]).to(contract_batch.device), reduction='none')[merge_d["batch_sim"]>0].mean()+nn.functional.cross_entropy(contract_residue, torch.arange(contract_residue.shape[0]).to(contract_residue.device), reduction='none')[merge_d["sim"]>0].mean()
-        '''num_nri=merge_d["node_residue_index"].max()+1
-        
+        num_nri=merge_d["node_residue_index"].max()+1
         emb_x=nn.functional.normalize(emb_x)
         # batch to group
         counts = torch.bincount(merge_d["node_residue_index"])
@@ -256,9 +260,10 @@ class SinCAA(nn.Module):
         mask_x=mask[:num_nri//2]
        
        
-        sim=torch.einsum('abc,adc->abd', x, y)/0.25
-        sim=sim*(1-mask_x[..., None])*(1-mask_y[..., None, :])-mask_x[..., None]-mask_y[..., None, :]
-        contrast_loss=contrast_loss+nn.functional.cross_entropy(sim, sim.argmax(-1))'''
+        y_neg=torch.cat([y[1:], y[:1]], 0)
+        y_neg_mask=torch.cat([mask_y[1:], mask_y[:1]], 0)
+        neg=((torch.cdist(x,y_neg.detach())+mask_x[..., None]*10+y_neg_mask[..., None, :]*10).min(-1).values*mask_x).sum(-1) # maintain local structure info
+        contrast_loss=contrast_loss+neg.mean()
         #if use_mask:
         if add_mask:
             return (rec_loss_mol+rec_loss_aa)/2, contrast_loss, mol_acc.item()
