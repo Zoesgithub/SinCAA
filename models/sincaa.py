@@ -54,8 +54,6 @@ class SinCAA(nn.Module):
         self.feat_dropout_rate=0.5
         self.aba=args.aba
         print(self.aba)
-        if self.aba==0:
-            self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
         
         
     def get_num_params(self):
@@ -188,7 +186,7 @@ class SinCAA(nn.Module):
       
         contrast_loss=pred_batch.sum(-1).mean()#+pred_resi.sum(-1).mean()#nn.functional.cross_entropy((contract_batch-contract_batch[torch.arange(contract_batch.shape[0]).to(contract_batch.device)][..., None]).clamp(-0.1)/0.02, torch.arange(contract_batch.shape[0]).to(contract_batch.device) )+nn.functional.cross_entropy((contract_residue-contract_residue[ torch.arange(contract_residue.shape[0]).to(contract_residue.device)][..., None]).clamp(-0.1)/0.02, torch.arange(contract_residue.shape[0]).to(contract_residue.device) )
         #nn.functional.cross_entropy(contract_batch, torch.arange(contract_batch.shape[0]).to(contract_batch.device), reduction='none')[merge_d["batch_sim"]>0].mean()+nn.functional.cross_entropy(contract_residue, torch.arange(contract_residue.shape[0]).to(contract_residue.device), reduction='none')[merge_d["sim"]>0].mean()
-        num_nri=merge_d["node_residue_index"].max()+1
+        '''num_nri=merge_d["node_residue_index"].max()+1
         emb_x=nn.functional.normalize(emb_x)
         # batch to group
         counts = torch.bincount(merge_d["node_residue_index"])
@@ -214,7 +212,7 @@ class SinCAA(nn.Module):
         y=torch.cat([y[1:], y[:1]], 0)
         mask_y=torch.cat([mask_y[1:], mask_y[:1]], 0)
         neg=((torch.einsum("lab,lcb->lac", x, y)-mask_y[..., None, :]*10).max(-1).values*(1-mask_x)).clamp(0.3).sum(-1) # maintain diversity
-        contrast_loss=contrast_loss+neg.mean()
+        contrast_loss=contrast_loss+neg.mean()'''
         if add_mask:
             return (rec_loss_mol+rec_loss_aa)/2, contrast_loss, mol_acc.item()
         return rec_loss_mol, contrast_loss, mol_acc.item()
