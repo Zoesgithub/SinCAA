@@ -174,7 +174,7 @@ class SinCAA(nn.Module):
         emb_batch=torch.scatter_reduce(emb_x.new_zeros(merge_d["batch_id"].max().long().item()+1, emb_x.shape[-1]), 0, merge_d["batch_id"][..., None].expand_as(emb_x).long(), emb_x, include_self=False, reduce="mean")
         
         aa_pseudo_emb_batch=nn.functional.normalize( emb_batch[:len(emb_batch)//2])
-        neighbor_pseudo_emb_batch=nn.functional.normalize( emb_batch[len(emb_batch)//2:]).detach()
+        neighbor_pseudo_emb_batch=nn.functional.normalize( emb_batch[len(emb_batch)//2:])
         
         contract_batch=torch.einsum("ab,cb->ac", aa_pseudo_emb_batch, neighbor_pseudo_emb_batch)
         
@@ -211,8 +211,9 @@ class SinCAA(nn.Module):
         mask_y=mask[num_nri//2:]
         x=x[:num_nri//2]
         mask_x=mask[:num_nri//2]
-       
-        neg=((torch.einsum("lab,lcb->lac", x, y.detach())-mask_y[..., None, :]*10).max(-1).values*(1-mask_x)).clamp(0.3).sum(-1) # maintain diversity
+        y=torch.cat([y[1:], y[:1]], 0)
+        mask_y=torch.cat([mask_y[1:], mask_y[:1]], 0)
+        neg=((torch.einsum("lab,lcb->lac", x, y)-mask_y[..., None, :]*10).max(-1).values*(1-mask_x)).clamp(0.3).sum(-1) # maintain diversity
         contrast_loss=contrast_loss+neg.mean()
         if add_mask:
             return (rec_loss_mol+rec_loss_aa)/2, contrast_loss, mol_acc.item()
