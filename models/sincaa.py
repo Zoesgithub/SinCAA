@@ -166,7 +166,7 @@ class SinCAA(nn.Module):
             _, rec_loss_aa, aa_acc= self.calculate_topol_emb(aa_data, add_mask=True)
             return (rec_loss_mol+rec_loss_aa)/2, rec_loss_mol.new_zeros(rec_loss_mol.shape), mol_acc.item()
         merge_d=collate_fn([[aa_data], [neighbor_data]])[0]
-        add_mask=True#(random.random()<0.5)
+        add_mask=True
         oemb_x, rec_loss_aa, aa_acc= self.calculate_topol_emb(merge_d, add_mask=add_mask)
         # local loss
         
@@ -180,17 +180,18 @@ class SinCAA(nn.Module):
         neighbor_pseudo_emb_batch=emb_batch[len(emb_batch)//2:]
         threshold=-0.1
         if not add_mask:
-            merge_sim=torch.einsum('ab,cb->ac', nn.functional.normalize(aa_pseudo_emb_batch), nn.functional.normalize(neighbor_pseudo_emb_batch))#self.sim_head(torch.cat([aa_pseudo_emb_batch[None].expand(merge_shape), neighbor_pseudo_emb_batch.expand(merge_shape)], -1)).squeeze(-1)
+            merge_sim=torch.einsum('ab,cb->ac', nn.functional.normalize(aa_pseudo_emb_batch), nn.functional.normalize(neighbor_pseudo_emb_batch))
             label=torch.eye(merge_sim.shape[0]).to(merge_sim.device).float()
             assert merge_sim.shape==label.shape
             contrast_loss=(merge_sim-merge_sim[label>0][..., None]).clamp(threshold).mean()
         else:
-            merge_sim=torch.einsum('ab,cb->ac', nn.functional.normalize(aa_pseudo_emb_batch), nn.functional.normalize(neighbor_pseudo_emb_batch))#self.sim_head(torch.cat([aa_pseudo_emb_batch[None].expand(merge_shape), neighbor_pseudo_emb_batch.expand(merge_shape)], -1)).squeeze(-1)
+            merge_sim=torch.einsum('ab,cb->ac', nn.functional.normalize(aa_pseudo_emb_batch), nn.functional.normalize(neighbor_pseudo_emb_batch))
             label=torch.eye(merge_sim.shape[0]).to(merge_sim.device).float()
             assert merge_sim.shape==label.shape
             contrast_loss=(merge_sim-merge_sim[label>0][..., None]).clamp(threshold).mean()
             with torch.no_grad():
                 temb_x, _, _= self.calculate_topol_emb(merge_d, add_mask=False)
+            # consider local loss
             contrast_loss=contrast_loss+((oemb_x[-1]-temb_x)**2).sum(-1).add(1e-8).sqrt().mean()*0.01
         
         if add_mask:
