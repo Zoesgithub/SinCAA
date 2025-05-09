@@ -2,6 +2,7 @@ import torch.nn as nn
 import torch_geometric.nn as gnn
 import torch
 from utils.data_utils import collate_fn
+import random
 
 
 def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm", num_inner_l=2):
@@ -53,9 +54,7 @@ class SinCAA(nn.Module):
             self.edge_recovery_info=nn.Linear(args.model_channels, 200) 
         self.feat_dropout_rate=0.5
         self.aba=args.aba
-        print(self.aba)
-        if self.aba==0:
-            self.sim_head=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
+      
         
         
     def get_num_params(self):
@@ -64,6 +63,7 @@ class SinCAA(nn.Module):
         return {"total":total, "topological_net":topological_net}
     
     def generate_mask(self, node_emb, edges, batch_id, dropout_rate=None, add_mask=False):
+        assert len(node_emb.shape)==2, node_emb.shape
         if dropout_rate is None:
             dropout_rate=self.feat_dropout_rate
         if add_mask:
@@ -166,24 +166,33 @@ class SinCAA(nn.Module):
             _, rec_loss_aa, aa_acc= self.calculate_topol_emb(aa_data, add_mask=True)
             return (rec_loss_mol+rec_loss_aa)/2, rec_loss_mol.new_zeros(rec_loss_mol.shape), mol_acc.item()
         merge_d=collate_fn([[aa_data], [neighbor_data]])[0]
-        add_mask=True
-        emb_x, rec_loss_aa, aa_acc= self.calculate_topol_emb(merge_d, add_mask=add_mask)
+        add_mask=True#(random.random()<0.5)
+        oemb_x, rec_loss_aa, aa_acc= self.calculate_topol_emb(merge_d, add_mask=add_mask)
         # local loss
-        with torch.no_grad():
-            emb_x_ref, _, _= self.calculate_topol_emb(merge_d, add_mask=add_mask) # to calculate local loss
-        local_loss=sum([((a-b)**2).sum(-1).add(1e-8).sqrt().mean() for a,b in zip(emb_x,emb_x_ref)])/len(emb_x)
-        emb_x=[_*self.generate_mask(_, merge_d["edges"], merge_d["batch_id"], add_mask=add_mask)[0] for _ in emb_x]
-        emb_x=sum(emb_x)/len(emb_x)
         
-        emb_batch=torch.scatter_reduce(emb_x.new_zeros(merge_d["batch_id"].max().long().item()+1, emb_x.shape[-1]), 0, merge_d["batch_id"][..., None].expand_as(emb_x).long(), emb_x, include_self=False, reduce="mean")
-        expand_shape=[len(emb_batch)//2, len(emb_batch)//2, emb_batch.shape[-1]]
-        pair_sim=self.sim_head(torch.cat([emb_batch[:len(emb_batch)//2][:, None].expand(expand_shape),  emb_batch[len(emb_batch)//2:][None].expand(expand_shape)], -1)).squeeze(-1)
+        if isinstance(oemb_x, list):
+            emb_x=sum(oemb_x)
+        else:
+            emb_x=oemb_x
+      
+        emb_batch=torch.scatter_reduce(emb_x.new_zeros(merge_d["batch_id"].max().long().item()+1, emb_x.shape[-1]), 0, merge_d["batch_id"][..., None].expand_as(emb_x).long(), emb_x, include_self=False, reduce="mean")    
+        aa_pseudo_emb_batch=emb_batch[:len(emb_batch)//2]
+        neighbor_pseudo_emb_batch=emb_batch[len(emb_batch)//2:]
+        threshold=-0.1
+        if not add_mask:
+            merge_sim=torch.einsum('ab,cb->ac', nn.functional.normalize(aa_pseudo_emb_batch), nn.functional.normalize(neighbor_pseudo_emb_batch))#self.sim_head(torch.cat([aa_pseudo_emb_batch[None].expand(merge_shape), neighbor_pseudo_emb_batch.expand(merge_shape)], -1)).squeeze(-1)
+            label=torch.eye(merge_sim.shape[0]).to(merge_sim.device).float()
+            assert merge_sim.shape==label.shape
+            contrast_loss=(merge_sim-merge_sim[label>0][..., None]).clamp(threshold).mean()
+        else:
+            merge_sim=torch.einsum('ab,cb->ac', nn.functional.normalize(aa_pseudo_emb_batch), nn.functional.normalize(neighbor_pseudo_emb_batch))#self.sim_head(torch.cat([aa_pseudo_emb_batch[None].expand(merge_shape), neighbor_pseudo_emb_batch.expand(merge_shape)], -1)).squeeze(-1)
+            label=torch.eye(merge_sim.shape[0]).to(merge_sim.device).float()
+            assert merge_sim.shape==label.shape
+            contrast_loss=(merge_sim-merge_sim[label>0][..., None]).clamp(threshold).mean()
+            with torch.no_grad():
+                temb_x, _, _= self.calculate_topol_emb(merge_d, add_mask=False)
+            contrast_loss=contrast_loss+((oemb_x[-1]-temb_x)**2).sum(-1).add(1e-8).sqrt().mean()*0.01
         
-        label=torch.eye(pair_sim.shape[0]).to(pair_sim.device).float()
-        assert label.shape==pair_sim.shape
-        contrast_loss=-label*torch.log(pair_sim.clamp(1e-6))-(1-label)*torch.log((1-pair_sim).clamp(1e-6))
-        contrast_loss=contrast_loss[label>0].mean()+contrast_loss[label<1].mean()
-        contrast_loss=contrast_loss+local_loss*0.1
         if add_mask:
-            return (rec_loss_mol+rec_loss_aa)/2, contrast_loss, mol_acc.item()
+            return (rec_loss_mol+rec_loss_aa)/2, contrast_loss, mol_acc.item() # minimize sim when dropout
         return rec_loss_mol, contrast_loss, mol_acc.item()
