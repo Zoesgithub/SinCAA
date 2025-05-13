@@ -54,8 +54,7 @@ class SinCAA(nn.Module):
         self.feat_dropout_rate=0.5
         self.aba=args.aba
         if self.aba==0:
-            self.out_layer=nn.Sequential(nn.Linear(args.model_channels*2, args.model_channels),nn.ReLU(),nn.Linear(args.model_channels, 1), nn.Sigmoid())
-      
+            self.out_layer=nn.Sequential(nn.LayerNorm(args.model_channels*2), nn.Linear(args.model_channels*2, args.model_channels),nn.ReLU(),nn.Linear(args.model_channels, 1), nn.Sigmoid())
         
         
     def get_num_params(self):
@@ -176,13 +175,21 @@ class SinCAA(nn.Module):
         else:
             emb_x=oemb_x
         bz=merge_d["batch_id"].max()+1
-        emb_x=torch.scatter_reduce(emb_x.new_zeros([bz, emb_x.shape[-1]]), 0,  merge_d["batch_id"][:, None].expand_as(emb_x), emb_x, include_self=False, reduce="sum")
+        gemb_x=emb_x
+        emb_x=torch.scatter_reduce(emb_x.new_zeros([bz, emb_x.shape[-1]]), 0,  merge_d["batch_id"][:, None].expand_as(emb_x), emb_x, include_self=False, reduce="mean")
         feat_shape=[bz//2, bz//2, emb_x.shape[-1]]
         feat=torch.cat([emb_x[:bz//2][:, None].expand(feat_shape), emb_x[bz//2:][None].expand(feat_shape)], -1)
         pred=self.out_layer(feat).squeeze(-1)
         label=torch.eye(bz//2).to(pred.device).float()
         loss=-label*torch.log(pred.clamp(1e-8))-(1-label)*torch.log((1-pred).clamp(1e-8))
-        contrast_loss=loss[label>0].mean()+loss[label<1].mean()
+        node_type=merge_d["nodes_int_feats"][..., 0]
+        regterm=((gemb_x.mean(0)-emb_m[-1].mean(0))**2).sum().add(1e-8).sqrt()
+        '''for v in torch.unique(node_type):
+            p=node_type==v
+            t=gemb_x[p]
+            regterm+=((t-t.mean(0,keepdims=True))**2).sum(-1).add(1e-8).sqrt().mean()'''
+        #regterm=torch.cdist(emb_x, emb_x)[label<1]
+        contrast_loss=loss[label>0].mean()+loss[label<1].mean()+regterm.mean()*0.01
         
         if add_mask:
             return (rec_loss_mol+rec_loss_aa)/2, contrast_loss, mol_acc.item() # minimize sim when dropout
