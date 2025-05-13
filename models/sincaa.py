@@ -2,8 +2,6 @@ import torch.nn as nn
 import torch_geometric.nn as gnn
 import torch
 from utils.data_utils import collate_fn
-import random
-from geomloss import SamplesLoss
 
 
 def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm", num_inner_l=2):
@@ -56,7 +54,7 @@ class SinCAA(nn.Module):
         self.feat_dropout_rate=0.5
         self.aba=args.aba
         if self.aba==0:
-            self.out_ln=nn.LayerNorm(args.model_channels)
+            self.out_layer=nn.Sequential(nn.Linear(args.model_channels*2, args.model_channels),nn.ReLU(),nn.Linear(args.model_channels, 1), nn.Sigmoid())
       
         
         
@@ -174,57 +172,17 @@ class SinCAA(nn.Module):
         # local loss
         
         if isinstance(oemb_x, list):
-            #emb_x=sum([_*self.generate_mask(oemb_x[0], merge_d['edges'], merge_d["batch_id"],dropout_rate=0.2, add_mask=True)[0] for _ in oemb_x])/len(oemb_x)
-            emb_x=sum(oemb_x)/len(oemb_x)
+            emb_x=oemb_x[-1]
         else:
             emb_x=oemb_x
-        #emb_x=(emb_x-emb_x.mean(-1, keepdims=True))/emb_x.std(-1, keepdims=True).clamp(1e-8)
-        #emb_x=self.out_ln(emb_x)
-        counts = torch.bincount(merge_d["batch_id"])
-        count_cumsum=torch.cumsum(counts, 0)-counts
-        max_length=counts.max().item()+1
-        num_batch=merge_d["batch_id"].max().item()+1
-        proj_pos=merge_d["batch_id"]*max_length+torch.arange(merge_d["batch_id"].shape[0]).to(merge_d["batch_id"].device)-count_cumsum[merge_d["batch_id"]]
-        batched_emb_x=emb_x.new_zeros([num_batch*max_length, emb_x.shape[-1]])
-        batched_mask=emb_x.new_zeros([num_batch*max_length])
-        batched_emb_x[proj_pos]=emb_x
-        batched_mask[proj_pos]=1
-        batched_emb_x=batched_emb_x.reshape([num_batch,max_length, emb_x.shape[-1]])
-        batched_mask=batched_mask.reshape([num_batch,max_length])
-        batched_mask=batched_mask/batched_mask.sum(-1, keepdims=True)
-        loss_fn = SamplesLoss("sinkhorn", p=2, blur=0.1)
-        
-        #emb_batch=torch.scatter_reduce(emb_x.new_zeros(merge_d["batch_id"].max().long().item()+1, emb_x.shape[-1]), 0, merge_d["batch_id"][..., None].expand_as(emb_x).long(), emb_x, include_self=False, reduce="mean")    
-        #aa_pseudo_emb_batch=nn.functional.normalize(emb_batch[:len(emb_batch)//2])
-        #neighbor_pseudo_emb_batch=nn.functional.normalize(emb_batch[len(emb_batch)//2:])
-        #merge_sim=aa_pseudo_emb_batch@neighbor_pseudo_emb_batch.transpose(1,0)*5
-        #label=torch.eye(merge_sim.shape[0]).to(merge_sim.device).float()
-        tx=emb_x[merge_d["batch_id"]%2==0]
-        ty=emb_x[merge_d["batch_id"]%2>0]
-        tx=tx[torch.randperm(tx.size(0))[:200]]
-        ty=ty[torch.randperm(ty.size(0))[:200]]
-
-        neg=torch.cat([batched_emb_x[-1:],batched_emb_x[num_batch//2:-1]], 0)
-        neg_mask=torch.cat([batched_mask[-1:],batched_mask[num_batch//2:-1]], 0)
-        loss_neg=loss_fn(batched_mask[:num_batch//2], batched_emb_x[:num_batch//2],neg_mask, neg)
-        loss_pos=loss_fn(batched_mask[:num_batch//2], batched_emb_x[:num_batch//2],batched_mask[num_batch//2:], batched_emb_x[num_batch//2:])
-        contrast_loss=(loss_pos-loss_neg).clamp(-2).mean()+loss_neg.mean()*0.1#nn.functional.cross_entropy(merge_sim, label.argmax(-1))+loss_fn(tx, ty)*0.01
-        
-        '''threshold=-0.1
-        if not add_mask:
-            merge_sim=torch.einsum('ab,cb->ac', nn.functional.normalize(aa_pseudo_emb_batch), nn.functional.normalize(neighbor_pseudo_emb_batch))
-            label=torch.eye(merge_sim.shape[0]).to(merge_sim.device).float()
-            assert merge_sim.shape==label.shape
-            contrast_loss=(merge_sim-merge_sim[label>0][..., None]).clamp(threshold).mean()
-        else:
-            merge_sim=torch.einsum('ab,cb->ac', nn.functional.normalize(aa_pseudo_emb_batch), nn.functional.normalize(neighbor_pseudo_emb_batch))
-            label=torch.eye(merge_sim.shape[0]).to(merge_sim.device).float()
-            assert merge_sim.shape==label.shape
-            contrast_loss=(merge_sim-merge_sim[label>0][..., None]).clamp(threshold).mean()
-            with torch.no_grad():
-                temb_x, _, _= self.calculate_topol_emb(merge_d, add_mask=False)
-            # consider local loss
-            contrast_loss=contrast_loss+((oemb_x[-1]-temb_x)**2).sum(-1).add(1e-8).sqrt().mean()*0.01'''
+        bz=merge_d["batch_id"].max()+1
+        emb_x=torch.scatter_reduce(emb_x.new_zeros([bz, emb_x.shape[-1]]), 0,  merge_d["batch_id"][:, None].expand_as(emb_x), emb_x, include_self=False, reduce="sum")
+        feat_shape=[bz//2, bz//2, emb_x.shape[-1]]
+        feat=torch.cat([emb_x[:bz//2][:, None].expand(feat_shape), emb_x[bz//2:][None].expand(feat_shape)], -1)
+        pred=self.out_layer(feat).squeeze(-1)
+        label=torch.eye(bz//2).to(pred.device).float()
+        loss=-label*torch.log(pred.clamp(1e-8))-(1-label)*torch.log((1-pred).clamp(1e-8))
+        contrast_loss=loss[label>0].mean()+loss[label<1].mean()
         
         if add_mask:
             return (rec_loss_mol+rec_loss_aa)/2, contrast_loss, mol_acc.item() # minimize sim when dropout
