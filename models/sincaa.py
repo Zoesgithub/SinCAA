@@ -174,14 +174,18 @@ class SinCAA(nn.Module):
             emb_x=oemb_x[-1]
         else:
             emb_x=oemb_x
-        bz=merge_d["batch_id"].max()+1
+        bz=merge_d["node_residue_index"].max()+1
         gemb_x=emb_x
-        emb_x=torch.scatter_reduce(emb_x.new_zeros([bz, emb_x.shape[-1]]), 0,  merge_d["batch_id"][:, None].expand_as(emb_x), emb_x, include_self=False, reduce="mean")
+        emb_x=torch.scatter_reduce(emb_x.new_zeros([bz, emb_x.shape[-1]]), 0,  merge_d["node_residue_index"][:, None].expand_as(emb_x), emb_x, include_self=False, reduce="mean")
         feat_shape=[bz//2, bz//2, emb_x.shape[-1]]
         feat=torch.cat([emb_x[:bz//2][:, None].expand(feat_shape), emb_x[bz//2:][None].expand(feat_shape)], -1)
         pred=self.out_layer(feat).squeeze(-1)
         label=torch.eye(bz//2).to(pred.device).float()
-        loss=-label*torch.log(pred.clamp(1e-8, 0.9))-(1-label)*torch.log((1-pred).clamp(1e-8, 0.9)) # avoid too large or too small
+        pos_pred=pred[label>0].reshape(-1)
+        pos_loss=-aa_data['sim'].reshape(-1)*torch.log(pos_pred.clamp(1e-8, ))-(1-aa_data['sim'].reshape(-1))*torch.log((1-pos_pred).clamp(1e-8, ))-(
+            -aa_data['sim'].reshape(-1)*torch.log(aa_data['sim'].reshape(-1).clamp(1e-8, ))-(1-aa_data['sim'].reshape(-1))*torch.log((1-aa_data['sim'].reshape(-1)).clamp(1e-8, )))
+        
+        loss=-(1-label)*torch.log((1-pred).clamp(1e-8)) # avoid too large or too small
         node_type=merge_d["nodes_int_feats"][..., 0]
         #regterm=((gemb_x.mean(0)-emb_m[-1].mean(0))**2).sum().add(1e-8).sqrt()
         '''for v in torch.unique(node_type):
@@ -189,7 +193,7 @@ class SinCAA(nn.Module):
             t=gemb_x[p]
             regterm+=((t-t.mean(0,keepdims=True))**2).sum(-1).add(1e-8).sqrt().mean()'''
         #regterm=torch.cdist(emb_x, emb_x)[label<1]
-        contrast_loss=loss[label>0].mean()+loss[label<1].mean()#+regterm.mean()*0.01
+        contrast_loss=pos_loss.mean()+loss[label<1].mean()#+regterm.mean()*0.01
         
         if add_mask:
             return (rec_loss_mol+rec_loss_aa)/2, contrast_loss, mol_acc.item() # minimize sim when dropout
