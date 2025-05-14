@@ -181,7 +181,7 @@ class SinCAA(nn.Module):
         feat=torch.cat([emb_x[:bz//2][:, None].expand(feat_shape), emb_x[bz//2:][None].expand(feat_shape)], -1)
         pred=self.out_layer(feat).squeeze(-1)
         label=torch.eye(bz//2).to(pred.device).float()
-        loss=-label*torch.log(pred.clamp(1e-8, 0.9))-(1-label)*torch.log((1-pred).clamp(1e-8)) # avoid pos too similar
+        loss=-label*torch.log(pred.clamp(1e-8, 0.9))-(1-label)*torch.log((1-pred).clamp(0.1)) # avoid too large or too small
         node_type=merge_d["nodes_int_feats"][..., 0]
         #regterm=((gemb_x.mean(0)-emb_m[-1].mean(0))**2).sum().add(1e-8).sqrt()
         '''for v in torch.unique(node_type):
