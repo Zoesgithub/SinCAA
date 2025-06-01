@@ -1,11 +1,11 @@
 import torch.nn as nn
 import torch_geometric.nn as gnn
 import torch
-from typing import Tuple
-from utils.rigid_utils import RobustRigid
 from utils.data_utils import collate_fn
 
-def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm"):
+
+def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm", num_inner_l=2):
+    assert norm=="GraphNorm", norm
     convs = nn.ModuleList()
     for _ in range(num_layers):
         net = gnn.Sequential('x, edge_index, edge_attr', [
@@ -13,65 +13,12 @@ def construct_gps(num_layers, channels, attn_type, num_head, norm="GraphNorm"):
             nn.Linear(channels, channels),
             nn.PReLU(),
             nn.Linear(channels, channels),
-        )), 'x, edge_index, edge_attr -> x'),
-        (gnn.GINEConv(nn.Sequential(
-            nn.Linear(channels, channels),
-            nn.PReLU(),
-            nn.Linear(channels, channels),
-        )), 'x, edge_index, edge_attr -> x'),
+        )), 'x, edge_index, edge_attr -> x') for _ in range(num_inner_l)
        
     ])
-       
-
         convs.append(gnn.GPSConv(channels, net, heads=num_head,
                                  attn_type=attn_type, norm=norm, act="PReLU"))
     return convs
-
-def construct_gps_gin(num_layers, channels, attn_type, num_head, norm="GraphNorm"):
-    convs = nn.ModuleList()
-    for _ in range(num_layers):
-        net = gnn.Sequential('x, edge_index', [
-        (gnn.GINConv(nn.Sequential(
-            nn.Linear(channels, channels),
-            nn.PReLU(),
-            nn.Linear(channels, channels),
-        )), 'x, edge_index -> x'),
-        (gnn.GINConv(nn.Sequential(
-            nn.Linear(channels, channels),
-            nn.PReLU(),
-            nn.Linear(channels, channels),
-        )), 'x, edge_index -> x'),
-       
-    ])
-
-        convs.append(gnn.GPSConv(channels, net, heads=num_head,
-                                 attn_type=attn_type, norm=norm, act="PReLU"))
-    return convs
-
-def construct_gin(num_layers, channels):
-    convs = nn.ModuleList()
-    for _ in range(num_layers):
-        net = nn.Sequential(
-            nn.Linear(channels, channels),
-            nn.PReLU(),
-            nn.Linear(channels, channels),
-        )
-
-        convs.append(gnn.GINConv(net))
-    return convs
-
-def construct_gine(num_layers, channels):
-    convs = nn.ModuleList()
-    for _ in range(num_layers):
-        net = nn.Sequential(
-            nn.Linear(channels, channels),
-            nn.PReLU(),
-            nn.Linear(channels, channels),
-        )
-
-        convs.append(gnn.GINConv(net))
-    return convs
-
    
 
 class SinCAA(nn.Module):
@@ -81,13 +28,15 @@ class SinCAA(nn.Module):
             self.decoder=gnn.models.GIN(args.model_channels, args.model_channels, args.decoder_layers)
         else:
             self.decoder=None
+        if not hasattr(args, "num_inner_l"):
+            args.num_inner_l=2
         if hasattr(args, "model") and args.model=="GAT":
             self.topological_net=gnn.models.GAT(args.model_channels, args.model_channels, args.topological_net_layers)
             self.model="GAT"
         else:
-            self.topological_net=construct_gps(args.topological_net_layers, args.model_channels, num_head=args.num_head, attn_type="multihead", norm=args.norm)
+            self.topological_net=construct_gps(args.topological_net_layers, args.model_channels, num_head=args.num_head, attn_type="multihead", norm=args.norm, num_inner_l=args.num_inner_l)
             self.model="GPS"
-        
+        assert args.norm=='GraphNorm'
         self.node_int_embeder = nn.ModuleList([nn.Embedding(
             100, args.model_channels) for _ in range(3)])
         self.edge_embeder = nn.ModuleList(
@@ -103,8 +52,10 @@ class SinCAA(nn.Module):
             self.recovery_info=nn.Linear(args.model_channels, 200)
             self.edge_recovery_info=nn.Linear(args.model_channels, 200) 
         self.feat_dropout_rate=0.5
-        self.out_similarity=nn.Sequential(nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
-        self.transform_layer=nn.Linear(args.model_channels*args.topological_net_layers, args.model_channels)
+        self.aba=args.aba
+        #if self.aba==0:
+        #    self.out_layer=nn.Sequential(nn.LayerNorm(args.model_channels*2), nn.Linear(args.model_channels*2, 1), nn.Sigmoid())
+        
         
     def get_num_params(self):
         total=sum(p.numel() for p in self.parameters())
@@ -112,6 +63,7 @@ class SinCAA(nn.Module):
         return {"total":total, "topological_net":topological_net}
     
     def generate_mask(self, node_emb, edges, batch_id, dropout_rate=None, add_mask=False):
+        assert len(node_emb.shape)==2, node_emb.shape
         if dropout_rate is None:
             dropout_rate=self.feat_dropout_rate
         if add_mask:
@@ -154,14 +106,14 @@ class SinCAA(nn.Module):
         # gps forward
         x = node_emb
         mask, edge_mask=self.generate_mask(x, edge_index, batch_id, add_mask=add_mask)
+        
         x=x*mask
         inpx=x
         assert edge_index.max()==x.shape[0]-1, f"{edge_index.shape} {x.shape}"
         assert edge_index.shape[-1]==0 or edge_index.max()<len(x), f"{edge_index.max} {x.shape}"
         xs=[]
         recovery_info_loss=0
-        #part_info=feats["part_info"]
-        #dx_loss=0
+     
         if self.model=="GAT":
             x=self.topological_net(x, edge_index,  edge_attr=edge_emb,batch=batch_id)
 
@@ -174,28 +126,28 @@ class SinCAA(nn.Module):
                 else:
                     edge_attr=x[edge_index[0]]+x[edge_index[1]]
                 x = conv(x, edge_index, edge_attr=edge_attr,batch=batch_id)
+                if add_mask:
+                    xs.append(x)
+                else:
+                    xs=x
             
                 
-                
-        ret_emb=torch.scatter_reduce(x.new_zeros(batch_id.max()+1, x.shape[-1]), 0, batch_id[..., None].expand_as(x), x, include_self=False, reduce="sum")
+        
         acc=0
         num_round=1
         for i in range(num_round):
-            #emask, eedge_mask=self.generate_mask(x, edge_index,batch_id, 0.3)
-            tx=x#*emask
-            #edge_mask=eedge_mask*edge_mask
-            #mask=emask*mask
+            tx=x
             if self.decoder is not None:
                 tx=self.decoder(tx, edge_index,)
             recovery_info=self.recovery_info(tx[mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
             l=feats["nodes_int_feats"][mask.squeeze(-1)<1][..., :2].reshape(-1)
-            recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l, reduce=False)).sum()/max(recovery_info.shape[0], 1)
+            recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(recovery_info, l,reduction='none' )).sum()/max(recovery_info.shape[0], 1)
             edge_recover_info=self.edge_recovery_info((tx[edge_index[0]]+tx[edge_index[1]])[edge_mask.squeeze(-1)<1]).reshape(-1, 2, 100).reshape(-1, 100)
             edge_l=edge_feats[edge_mask.squeeze(-1)<1].reshape(-1)
-            recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(edge_recover_info, edge_l, reduce=False)).sum()/max(edge_recover_info.shape[0], 1)
+            recovery_info_loss=recovery_info_loss+(nn.functional.cross_entropy(edge_recover_info, edge_l, reduction='none' )).sum()/max(edge_recover_info.shape[0], 1)
             acc=acc+(recovery_info.argmax(-1)==l).float().sum()/max(l.shape[0],1)+(edge_recover_info.argmax(-1)==edge_l).float().sum()/max(edge_l.shape[0], 1)
         acc=acc/num_round/2
-        return x, ret_emb, recovery_info_loss, acc
+        return xs, recovery_info_loss, acc
     
 
     def inner_forward(self, data):
@@ -206,7 +158,43 @@ class SinCAA(nn.Module):
 
     def forward(self, aa_data, mol_data, neighbor_data, add_mask):
         assert add_mask
-        _, aa_pseudo_emb, rec_loss_aa, aa_acc= self.calculate_topol_emb(aa_data, add_mask=True)
-        _, neighbor_pseudo_emb, rec_loss_n, n_acc= self.calculate_topol_emb(neighbor_data, add_mask=True)
-        _, _, rec_loss_mol, mol_acc= self.calculate_topol_emb(mol_data, add_mask=add_mask)
-        return aa_pseudo_emb,neighbor_pseudo_emb, rec_loss_mol+rec_loss_aa+rec_loss_n, self.out_similarity(torch.cat([aa_pseudo_emb, neighbor_pseudo_emb], -1)).squeeze(-1), (mol_acc).item()
+        emb_m, rec_loss_mol, mol_acc= self.calculate_topol_emb(mol_data, add_mask=add_mask)
+        if self.aba==2: # use only zinc
+            return rec_loss_mol, rec_loss_mol.new_zeros(rec_loss_mol.shape),mol_acc.item()
+       
+        if self.aba==1: # use both zinc and aa
+            _, rec_loss_aa, aa_acc= self.calculate_topol_emb(aa_data, add_mask=True)
+            return (rec_loss_mol+rec_loss_aa)/2, rec_loss_mol.new_zeros(rec_loss_mol.shape), mol_acc.item()
+        merge_d=collate_fn([[aa_data], [neighbor_data]])[0]
+        add_mask=True
+        oemb_x, rec_loss_aa, aa_acc= self.calculate_topol_emb(merge_d, add_mask=add_mask)
+        # local loss
+        
+        if isinstance(oemb_x, list):
+            emb_x=oemb_x[-1]
+        else:
+            emb_x=oemb_x
+        bz=merge_d["node_residue_index"].max()+1
+        gemb_x=emb_x
+        emb_x=torch.scatter_reduce(emb_x.new_zeros([bz, emb_x.shape[-1]]), 0,  merge_d["node_residue_index"][:, None].expand_as(emb_x), emb_x, include_self=False, reduce="mean")
+    
+        pred=torch.exp(-torch.cdist(emb_x[:bz//2],emb_x[bz//2:]).clamp(0, 10))
+        label=torch.eye(bz//2).to(pred.device).float()
+        pos_pred=pred[label>0].reshape(-1)
+        pos_loss=(abs(pos_pred-aa_data['sim'].reshape(-1))).mean() 
+        '''-aa_data['sim'].reshape(-1)*torch.log(pos_pred.clamp(1e-8, ))-(1-aa_data['sim'].reshape(-1))*torch.log((1-pos_pred).clamp(1e-8, ))-(
+            -aa_data['sim'].reshape(-1)*torch.log(aa_data['sim'].reshape(-1).clamp(1e-8, ))-(1-aa_data['sim'].reshape(-1))*torch.log((1-aa_data['sim'].reshape(-1)).clamp(1e-8, )))'''
+        
+        loss=pred#-(1-label)*torch.log((1-pred).clamp(1e-8)) # avoid too large or too small
+        node_type=merge_d["nodes_int_feats"][..., 0]
+        #regterm=((gemb_x.mean(0)-emb_m[-1].mean(0))**2).sum().add(1e-8).sqrt()
+        '''for v in torch.unique(node_type):
+            p=node_type==v
+            t=gemb_x[p]
+            regterm+=((t-t.mean(0,keepdims=True))**2).sum(-1).add(1e-8).sqrt().mean()'''
+        #regterm=torch.cdist(emb_x, emb_x)[label<1]
+        contrast_loss=pos_loss.mean()+loss[label<1].mean()#+regterm.mean()*0.01
+        
+        if add_mask:
+            return (rec_loss_mol+rec_loss_aa)/2, contrast_loss, mol_acc.item() # minimize sim when dropout
+        return rec_loss_mol, contrast_loss, mol_acc.item()

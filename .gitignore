@@ -6,9 +6,10 @@ data
 experiments
 script
 trash
+tmp
 # C extensions
 *.so
-
+.vscode
 # Distribution / packaging
 .Python
 build/

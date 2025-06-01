@@ -1,102 +1,29 @@
 from torch.utils.data import Dataset
 import pandas as pd
-from utils.similarity_utils import aa_pattern, num_confs
 from rdkit import Chem
-from rdkit.Chem import AllChem
 import random
 import numpy as np
 import torch
 import hashlib
-import os
 from utils.amino_acid import AminoAcid
 import utils.data_constants as ud
 from openfold.np.residue_constants import restype_3to1, resname_to_idx
-from utils.chem_utils import pre_compute_distance_bound
-import shutil
-#import metis
-import networkx as nx
+
 smiles_to_idx={Chem.MolToSmiles(Chem.MolFromSequence(restype_3to1[_], flavor=0)):resname_to_idx[_] for _ in restype_3to1}
-'''
-def recursive_partition(graph, id=0,depth=0, max_depth=4):
-    if depth >= max_depth:
-        return [list(graph.nodes), id]
-    if len(list(graph.nodes))<2:
-        subgraphs=[list(graph.nodes),[]]
-    else:
-        metis_graph = metis.networkx_to_metis(graph)
-    
-        edgecuts, partition = metis.part_graph(metis_graph, nparts=2)
-
-        subgraphs = [[], []]
-        for node, part in zip(graph.nodes, partition):
-            subgraphs[part].append(node)
-
-    subgraph1 = graph.subgraph(subgraphs[0]).copy()
-    subgraph2 = graph.subgraph(subgraphs[1]).copy()
-
-    return [recursive_partition(subgraph1,id*2, depth + 1, max_depth),
-           recursive_partition(subgraph2,id*2+1, depth + 1, max_depth), id]
-    
-def get_matrix_for_partions(partions, id_matrixes, depth):
-    if len(partions)==2: # leaf node
-        nodes, id=partions
-        for v in nodes:
-            assert id_matrixes[depth][v]<0
-            id_matrixes[depth][v]=id
-        return
-    assert len(partions)==3
-    left, right, id=partions
-    ori_child_matrix=id_matrixes[depth+1].copy()
-    get_matrix_for_partions(left,  id_matrixes, depth+1)
-    get_matrix_for_partions(right, id_matrixes, depth+1)
-    id_matrixes[depth][id_matrixes[depth+1]!=ori_child_matrix]=id
-    
-    '''
 
 def myHash(text: str):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
-'''def add_part_info(feat, max_level):
-    num_node=len(feat["nodes_int_feats"])
-    edge=feat["edges"]
-    if edge.shape[-1]!=2:
-        edge=edge.transpose(1, 0)
-    assert edge.shape[-1]==2, edge.shape
-    G=nx.Graph()
-    G.add_edges_from(edge.tolist())
-    partitions=recursive_partition(G, max_depth=max_level)
-    part_matrix=[np.zeros(num_node, dtype=int)-1 for _ in range(max_level+1)]
-    get_matrix_for_partions(partitions,  part_matrix, 0)
-    part_matrix=part_matrix[::-1]
-    part_info=[]
-    for i,v in enumerate(part_matrix):
-        # make v unique
-        num_unique_v=len(np.unique(v))
-        map_v={a:i for i,a in enumerate(np.unique(v))}
-        v=np.array([map_v[_] for _ in v])
-        mapped_edge=np.unique(v[edge], axis=0) 
-        assert mapped_edge.shape[-1]==2, mapped_edge.shape       
-        mapped_edge=mapped_edge[mapped_edge[..., 0]!=mapped_edge[..., 1]]
-        remap_v=v.copy()
-        
-        part_info.append([remap_v, mapped_edge])
-        prev_unique_v=v
-    feat["part_info"]=part_info
-    
-    return feat'''
 
 def get_graph(aa_name=None, smiles=None, max_level=4):
-    if smiles is not None:
-        
+    if smiles is not None:        
         aa_name=myHash(smiles)
         ligand_path=None
     else:
-        
         ligand_path=ud.cache_data_path
-    
-    
+
     ret=AminoAcid(aa_name=aa_name, aa_idx=0, smiles=smiles, ligand_path=ligand_path).get_graph_with_gt()
-    return ret#add_part_info(ret, max_level)
+    return ret
     
 
 
@@ -108,152 +35,6 @@ def load_conf(path, smiles, max_level=4):
     else:
         ret["aa_label"]=torch.tensor( -1).reshape(-1)
     return ret
-    
-
-
-def get_idx_of_H(atom):
-    neighbors = atom.GetNeighbors()
-    for v in neighbors:
-        if v.GetSymbol() == "H":
-            return v.GetIdx()
-
-
-def add_mol_to_emol(emol, mol, exclude_atoms):
-    map_from_ori_idx_to_new_idx = {}
-    for i, atom in enumerate(mol.GetAtoms()):
-        assert i == atom.GetIdx()
-        if atom.GetIdx() not in exclude_atoms:
-            map_from_ori_idx_to_new_idx[atom.GetIdx()] = emol.AddAtom(atom)
-    for bond in mol.GetBonds():
-        start, end = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
-        if start in map_from_ori_idx_to_new_idx and end in map_from_ori_idx_to_new_idx:
-            emol.AddBond(
-                map_from_ori_idx_to_new_idx[start], map_from_ori_idx_to_new_idx[end], order=bond.GetBondType())
-    return map_from_ori_idx_to_new_idx
-
-
-def merge_aa(mid, num_confs, start=None, end=None):
-    if start is not None and end is not None:
-        start_mol = Chem.AddHs(Chem.MolFromSmiles(start))
-        mid_mol = Chem.AddHs(Chem.MolFromSmiles(mid))
-        end_mol = Chem.AddHs(Chem.MolFromSmiles(end))
-
-        start_match_pattern = start_mol.GetSubstructMatches(
-            Chem.MolFromSmarts(aa_pattern))
-        mid_match_pattern = mid_mol.GetSubstructMatches(
-            Chem.MolFromSmarts(aa_pattern))
-        end_match_pattern = end_mol.GetSubstructMatches(
-            Chem.MolFromSmarts(aa_pattern))
-
-        assert len(start_match_pattern) > 0, start_match_pattern
-        assert len(mid_match_pattern) > 0, mid_match_pattern
-        assert len(end_match_pattern) > 0, end_match_pattern
-
-        start_match_pattern = random.choice(start_match_pattern)
-        mid_match_pattern = random.choice(mid_match_pattern)
-        end_match_pattern = random.choice(end_match_pattern)
-
-        emol = Chem.EditableMol(Chem.Mol())
-        startN, startCA, startCO, _, startOH = start_match_pattern
-        midN, midCA, midCO, _, midOH = mid_match_pattern
-        endN, endCA, endCO, _, endOH = end_match_pattern
-
-        start_exclude_atoms = [get_idx_of_H(
-            start_mol.GetAtomWithIdx(startOH)), startOH]
-        start_map = add_mol_to_emol(emol, start_mol, start_exclude_atoms)
-
-        mid_exclude_atoms = [get_idx_of_H(mid_mol.GetAtomWithIdx(
-            midOH)), get_idx_of_H(mid_mol.GetAtomWithIdx(midN)), midOH]
-        mid_map = add_mol_to_emol(emol, mid_mol, mid_exclude_atoms)
-
-        end_exclude_atoms = [get_idx_of_H(end_mol.GetAtomWithIdx(endN))]
-        end_map = add_mol_to_emol(emol, end_mol, end_exclude_atoms)
-
-        b1 = emol.AddBond(
-            start_map[startCO], mid_map[midN], order=Chem.rdchem.BondType.SINGLE)
-        b2 = emol.AddBond(
-            mid_map[midCO], end_map[endN], order=Chem.rdchem.BondType.SINGLE)
-
-        mol = emol.GetMol()
-        Chem.SanitizeMol(mol)
-        cids = AllChem.EmbedMultipleConfs(
-            mol, numConfs=num_confs,  useExpTorsionAnglePrefs=True, useBasicKnowledge=True)
-
-        # build return
-        emol = Chem.EditableMol(Chem.Mol())
-        ret_map = {}
-        for v in mid_map.values():
-            ret_map[v] = emol.AddAtom(mol.GetAtomWithIdx(v))
-        for bond in mol.GetBonds():
-            start, end = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
-            if start in ret_map and end in ret_map:
-                emol.AddBond(
-                    ret_map[start], ret_map[end], order=bond.GetBondType())
-        ret = []
-        rev_ret_map = {v: k for k, v in ret_map.items()}
-        for v in cids:
-            conf = mol.GetConformer(v)
-            tmp = emol.GetMol()
-            tmp_conf = AllChem.Conformer(tmp.GetNumAtoms())
-
-            for atom in tmp.GetAtoms():
-                if atom.GetIdx() in rev_ret_map:
-                    tmp_conf.SetAtomPosition(
-                        atom.GetIdx(), conf.GetAtomPosition(rev_ret_map[atom.GetIdx()]))
-            tmp.AddConformer(tmp_conf)
-            ret.append(tmp)
-    else:
-        mol = Chem.AddHs(Chem.MolFromSmiles(mid))
-        Chem.SanitizeMol(mol)
-        cids = AllChem.EmbedMultipleConfs(
-            mol, numConfs=num_confs,  useExpTorsionAnglePrefs=True, useBasicKnowledge=True)
-        ret = []
-        
-        for v in cids:
-            conf = mol.GetConformer(v)
-            tmp =  Chem.AddHs(Chem.MolFromSmiles(mid))
-            tmp_conf = AllChem.Conformer(tmp.GetNumAtoms())
-
-            for atom in tmp.GetAtoms():
-                tmp_conf.SetAtomPosition(
-                        atom.GetIdx(), conf.GetAtomPosition(atom.GetIdx()))
-            tmp.AddConformer(tmp_conf)
-            ret.append(tmp)
-    return ret
-
-
-def merge_aa_withoutconf(mid, start):
-    start_mol = Chem.AddHs(Chem.MolFromSmiles(start))
-    mid_mol = Chem.AddHs(Chem.MolFromSmiles(mid))
-    
-    start_match_pattern = start_mol.GetSubstructMatches(
-        Chem.MolFromSmarts(aa_pattern))
-    mid_match_pattern = mid_mol.GetSubstructMatches(
-        Chem.MolFromSmarts(aa_pattern))
-
-    assert len(start_match_pattern) > 0, start_match_pattern
-    assert len(mid_match_pattern) > 0, mid_match_pattern
-
-    start_match_pattern = random.choice(start_match_pattern)
-    mid_match_pattern = random.choice(mid_match_pattern)
-    emol = Chem.EditableMol(Chem.Mol())
-    startN, startCA, startCO, _, startOH = start_match_pattern
-    midN, midCA, midCO, _, midOH = mid_match_pattern
-
-    start_exclude_atoms = [get_idx_of_H(
-        start_mol.GetAtomWithIdx(startOH)), startOH]
-    start_map = add_mol_to_emol(emol, start_mol, start_exclude_atoms)
-
-    mid_exclude_atoms = [get_idx_of_H(mid_mol.GetAtomWithIdx(midN))]
-    mid_map = add_mol_to_emol(emol, mid_mol, mid_exclude_atoms)
-
-    b1 = emol.AddBond(
-        start_map[startCO], mid_map[midN], order=Chem.rdchem.BondType.SINGLE)
-
-    mol = emol.GetMol()
-    Chem.SanitizeMol(mol)
-        
-    return mol, start_map, mid_map
 
 
 class MolDataset(Dataset):
@@ -284,8 +65,6 @@ class MolDataset(Dataset):
         self.mol_index=list(range(len(self.mol_data)))[mol_step*rank:mol_step*rank+mol_step]
         self.istrain=istrain
     
-        
-        
     def build_neighbor_key(self):
         map_str_to_idx={}
         for i,v in enumerate(self.aa_smiles):
@@ -332,8 +111,8 @@ class ChainDataset(MolDataset):
         idx=random.randint(0, len(neighbors)-1)
         neighbor_aa = neighbors[idx]
         sim=float(self.aa_similarity[index].split(";")[idx])
-        if sim==0:
-            print(self.aa_similarity[index], mid_aa)
+        #if sim==0:
+        #    print(self.aa_similarity[index], mid_aa)
         def remove_last_atom(data):
             ret={
                 "nodes_int_feats":data["nodes_int_feats"][:-1],
@@ -366,6 +145,7 @@ class ChainDataset(MolDataset):
         aa_data, nei_data=collate_fn([[a,b] for a,b in zip(aa_data,nei_data)])
        
         aa_data["sim"]=torch.tensor(sims).reshape(-1)
+        aa_data["batch_sim"]=torch.tensor(min(sims)).reshape(-1)
         aa_data["index"]=torch.tensor(indexs).reshape(-1)
         
         aa_data["batch_id"]=np.zeros(len(aa_data["nodes_int_feats"]), dtype=int)
@@ -439,10 +219,9 @@ def collate_fn(batch):
             
         for k in ret:
             ret[k] = torch.cat(ret[k], 0)
-        #edge_filter=ret["edges"]
-        #edge_filter=(edge_filter[..., 0]<num_node)&(edge_filter[..., 1]<num_node)
+       
         ret["edges"] = ret["edges"].transpose(1, 0)
-        #ret["edge_attrs"]=ret["edge_attrs"]#[edge_filter]
+       
         if part_info is not None:
             ret["part_info"]=part_info
         return ret
