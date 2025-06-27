@@ -1,6 +1,6 @@
 
 python main.py \
- --experiment_name=n1_weight0.1_final_from_scratch_withreg \
+ --experiment_name=n1_weight0.1_innl2 \
  --norm=GraphNorm \
  --num_head=16  \
  --learning_rate=1e-3 \
