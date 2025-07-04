@@ -9,6 +9,7 @@ script
 trash
 tmp
 openfold/
+used_code
 # C extensions
 *.so
 .vscode
