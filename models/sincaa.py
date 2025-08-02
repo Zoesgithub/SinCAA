@@ -158,6 +158,8 @@ class SinCAA(nn.Module):
             acc = acc+(recovery_info.argmax(-1) == l).float().sum()/max(l.shape[0], 1)+(
                 edge_recover_info.argmax(-1) == edge_l).float().sum()/max(edge_l.shape[0], 1)
         acc = acc/num_round/2
+        if self.training:
+            return tx, recovery_info_loss, acc
         return xs, recovery_info_loss, acc
 
     def inner_forward(self, data):
