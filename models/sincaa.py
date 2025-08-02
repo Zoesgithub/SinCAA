@@ -165,7 +165,7 @@ class SinCAA(nn.Module):
             data)
         return pseudo_emb, rec_loss
 
-    def forward(self, aa_data, mol_data, neighbor_data, add_mask):
+    def forward(self, aa_data, mol_data, neighbor_data, neg_data, add_mask):
         assert add_mask
         emb_m, rec_loss_mol, mol_acc = self.calculate_topol_emb(
             mol_data, add_mask=add_mask)
@@ -176,7 +176,7 @@ class SinCAA(nn.Module):
             _, rec_loss_aa, aa_acc = self.calculate_topol_emb(
                 aa_data, add_mask=True)
             return (rec_loss_mol+rec_loss_aa)/2, rec_loss_mol.new_zeros(rec_loss_mol.shape), mol_acc.item()
-        merge_d = collate_fn([[aa_data], [neighbor_data]])[0]
+        merge_d = collate_fn([[aa_data], [neighbor_data], [neg_data]])[0]
         add_mask = True
         oemb_x, rec_loss_aa, aa_acc = self.calculate_topol_emb(
             merge_d, add_mask=add_mask)
@@ -185,12 +185,18 @@ class SinCAA(nn.Module):
             emb_x = oemb_x[-1]
         else:
             emb_x = oemb_x
-        bz = merge_d["batch_id"].max()+1
-        emb_x = torch.scatter_reduce(emb_x.new_zeros(
-            [bz, emb_x.shape[-1]]), 0,  merge_d["batch_id"][:, None].expand_as(emb_x), emb_x, include_self=False, reduce="mean")
-        distance_loss = nn.functional.cross_entropy(-torch.cdist(
-            emb_x[:bz//2][None], emb_x[bz//2:][:, None]).squeeze(-1), torch.arange(bz//2).to(emb_x.device))
-        contrast_loss = distance_loss
+        contrast_loss = 0
+        for k in ["node_residue_index", "batch_id"]:
+            bz = merge_d[k].max()+1
+            temb_x = torch.scatter_reduce(emb_x.new_zeros(
+                [bz, emb_x.shape[-1]]), 0,  merge_d[k][:, None].expand_as(emb_x), emb_x, include_self=False, reduce="mean")
+            pos_dist = -torch.cdist(
+                temb_x[:bz//3][None], temb_x[bz//3:bz//3*2][:, None]).squeeze(-1)
+            neg_dist = -torch.cdist(
+                temb_x[:bz//3][None], temb_x[bz//3*2:][:, None]).squeeze(-1)
+            distance_loss = nn.functional.cross_entropy(
+                torch.cat([pos_dist, neg_dist], -1), torch.arange(bz//3).to(emb_x.device))
+            contrast_loss = contrast_loss + distance_loss
 
         if add_mask:
             # minimize sim when dropout
