@@ -111,7 +111,7 @@ class ChainDataset(MolDataset):
         mid_aa = self.aa_smiles[index]
         neighbors = self.aa_neighbors[index].split(";")
         assert len(neighbors) > 0
-        idx = random.randint(0, len(neighbors)-1)
+        idx, negidx = sorted(random.choices(range(len(neighbors)), k=2))
         neighbor_aa = neighbors[idx]
         sim = float(self.aa_similarity[index].split(";")[idx])
         # if sim==0:
@@ -130,7 +130,7 @@ class ChainDataset(MolDataset):
         indexs = [index]
         aa_data = [get_graph(smiles=mid_aa, max_level=None)]
         nei_data = [get_graph(smiles=neighbor_aa, max_level=None)]
-        neg_data = [get_graph(smiles=neighbor_aa, max_level=None)]
+        neg_data = [get_graph(smiles= neighbors[negidx], max_level=None)]
         num_added_aa = self.max_combine  # random.randint(0, self.max_combine)
         while num_added_aa > 0:
             num_added_aa -= 1
@@ -139,13 +139,12 @@ class ChainDataset(MolDataset):
             neg_data[-1] = remove_last_atom(neg_data[-1])
             idx = self.index[random.randint(0, len(self.index)-1)]
             neighbors = self.aa_neighbors[idx].split(";")
-            nidx = random.randint(0, len(neighbors)-1)
-            neg = self.index[random.randint(0, len(self.index)-1)]
+            nidx, negidx =sorted(random.choices(range(len(neighbors)), k=2))
             aa_data.append(
                 get_graph(smiles=self.aa_smiles[idx], max_level=None))
             nei_data.append(get_graph(smiles=neighbors[nidx], max_level=None))
             neg_data.append(
-                get_graph(smiles=self.aa_smiles[neg], max_level=None))
+                get_graph(smiles=neighbors[negidx], max_level=None))
             sims.append(float(self.aa_similarity[idx].split(";")[nidx]))
             indexs.append(idx)
 

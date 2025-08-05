@@ -65,7 +65,7 @@ def inner_trainer(rank, world_size, args):
     if args.load_path is not None:
         print(f"loading from {args.load_path} ...")
         param = torch.load(args.load_path)
-        model.load_state_dict(param["state_dict"])
+        model.load_state_dict(param["state_dict"], strict=False)
         start_epoch = param["epoch"]+1
         del param
     val_loss = 99999
@@ -130,7 +130,7 @@ def inner_trainer(rank, world_size, args):
                     if args.aba:
                         val_aa_con_loss += rec_loss.item()
                     else:
-                        val_aa_con_loss += aa_contrastive_loss.item()*weight_contractive+rec_loss.item()
+                        val_aa_con_loss += rec_loss.item()
 
             all_loss = torch.tensor(val_aa_con_loss).to(rank)
             dist.all_reduce(all_loss, op=dist.ReduceOp.SUM)

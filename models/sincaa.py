@@ -58,7 +58,7 @@ class SinCAA(nn.Module):
             self.edge_recovery_info = nn.Linear(args.model_channels, 200)
         self.feat_dropout_rate = 0.5
         self.aba = args.aba
-
+    
     def get_num_params(self):
         total = sum(p.numel() for p in self.parameters())
         topological_net = sum(p.numel()
@@ -158,8 +158,6 @@ class SinCAA(nn.Module):
             acc = acc+(recovery_info.argmax(-1) == l).float().sum()/max(l.shape[0], 1)+(
                 edge_recover_info.argmax(-1) == edge_l).float().sum()/max(edge_l.shape[0], 1)
         acc = acc/num_round/2
-        if self.training:
-            return tx, recovery_info_loss, acc
         return xs, recovery_info_loss, acc
 
     def inner_forward(self, data):
@@ -188,16 +186,17 @@ class SinCAA(nn.Module):
         else:
             emb_x = oemb_x
         contrast_loss = 0
-        for k in ["node_residue_index", "batch_id"]:
+        for k in ["batch_id"]:
             bz = merge_d[k].max()+1
-            temb_x = torch.scatter_reduce(emb_x.new_zeros(
+            temb_x =torch.scatter_reduce(emb_x.new_zeros(
                 [bz, emb_x.shape[-1]]), 0,  merge_d[k][:, None].expand_as(emb_x), emb_x, include_self=False, reduce="mean")
             pos_dist = -torch.cdist(
-                temb_x[:bz//3][None], temb_x[bz//3:bz//3*2][:, None]).squeeze(-1)
+                temb_x[:bz//3], temb_x[bz//3:bz//3*2]).squeeze(-1)
             neg_dist = -torch.cdist(
-                temb_x[:bz//3][None], temb_x[bz//3*2:][:, None]).squeeze(-1)
+                temb_x[:bz//3], temb_x[bz//3*2:]).squeeze(-1)
+            assert len(pos_dist.shape)==2, pos_dist.shape
             distance_loss = nn.functional.cross_entropy(
-                torch.cat([pos_dist, neg_dist], -1), torch.arange(bz//3).to(emb_x.device))
+                torch.cat([pos_dist, neg_dist], -1), torch.arange(bz//3).long().to(emb_x.device))
             contrast_loss = contrast_loss + distance_loss
 
         if add_mask:
