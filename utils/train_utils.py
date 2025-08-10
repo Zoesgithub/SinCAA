@@ -13,7 +13,7 @@ import numpy as np
 
 def setup(rank, world_size):
     dist.init_process_group(
-        "gloo", init_method="tcp://127.0.0.1:12359", rank=rank, world_size=world_size)
+        "nccl", init_method="tcp://127.0.0.1:12359", rank=rank, world_size=world_size)
 
 
 def inner_trainer(rank, world_size, args):

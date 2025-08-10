@@ -1,6 +1,6 @@
 
 python main.py \
- --experiment_name=n1_weight0.1_innl2 \
+ --experiment_name=n1_weight0.1_innl2_both \
  --norm=GraphNorm \
  --num_head=16  \
  --learning_rate=1e-3 \
