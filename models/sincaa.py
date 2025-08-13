@@ -29,8 +29,6 @@ class SinCAA(nn.Module):
                 args.model_channels, args.model_channels, args.decoder_layers)
         else:
             self.decoder = None
-        if not hasattr(args, "num_inner_l"):
-            args.num_inner_l = 2
         if hasattr(args, "model") and args.model == "GAT":
             self.topological_net = gnn.models.GAT(
                 args.model_channels, args.model_channels, args.topological_net_layers)
