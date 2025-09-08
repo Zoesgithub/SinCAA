@@ -174,9 +174,9 @@ def get_non_empty_coord(position, atom_properties, grid_length):
     for prop, mipv, mapv in zip(atom_props, min_pos, max_pos):
         min_x, min_y, min_z = mipv
         max_x, max_y, max_z = mapv
-        for i in range(int(min_x), int(max_x)):
-            for j in range(int(min_y), int(max_y)):
-                for k in range(int(min_z), int(max_z)):
+        for i in range(round(min_x), round(max_x)):
+            for j in range(round(min_y), round(max_y)):
+                for k in range(round(min_z), round(max_z)):
                     if (i, j, k) not in ret_res:
                         ret_res[(i, j, k)] = {}
                     num=int(prop[0])
