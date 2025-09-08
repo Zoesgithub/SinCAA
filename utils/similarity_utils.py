@@ -235,9 +235,9 @@ def count_distance(a, b, threshold=-1):
 def myHash(text: str):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
-def get_space_distance(a, b, grid_length=0.5):
-    a_pos = sample_normed_pos(a,20, grid_length=grid_length)
-    b_pos = sample_normed_pos(b,20, grid_length=grid_length)
+def get_space_distance(a, b, grid_length=0.5, num_samples=20):
+    a_pos = sample_normed_pos(a,num_samples, grid_length=grid_length)
+    b_pos = sample_normed_pos(b,num_samples, grid_length=grid_length)
     #if not isinstance(a_pos, int) and not isinstance(b_pos, int):
     ret = count_distance(a_pos, b_pos)
     return ret
