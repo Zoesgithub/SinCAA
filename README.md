@@ -1,4 +1,4 @@
-# SinCAA
+# 🧬 SinCAA
 
 **Learning representations for peptides containing non-canonical amino acids (ncAAs).**  
 This repository provides the implementation, pretrained models, and training pipeline for the paper:
@@ -9,13 +9,19 @@ This repository provides the implementation, pretrained models, and training pip
 ---
 
 ## 🚀 Overview
+![Overview of SinCAA](figs/fig1.png)
 Standard protein language models are typically trained only on canonical amino acids, which limits their capacity to model peptides containing ncAAs.
 This project introduces SinCAA, a framework that integrates a 3D conformational similarity metric into a graph transformer trained with dual objectives—contrastive learning and masked-node reconstruction—to generate transferable molecular embeddings capable of generalizing from individual ncAAs to complete peptides.
 SinCAA demonstrates strong performance across multiple downstream tasks, including peptide binding affinity prediction, cell-penetrating ability estimation, and protein–peptide binding site prediction. Notably, it achieves substantial improvements over existing methods and exhibits remarkable zero-shot generalization, underscoring its potential to accelerate therapeutic peptide discovery.
 
-
-
 ## 🔥 Quick start
+To ensure reproducibility, all dependencies required for SinCAA can be installed via the provided environment.yml file.
+Follow the steps below to create and activate the environment.
+
+> conda env create -f environment.yml ; conda activate sincaa
+
+SinCAA relies on [OpenFold](https://github.com/aqlaboratory/openfold) for structure-based modeling and feature extraction. Please follow the official OpenFold installation instructions to install it properly.
+
 The pretrained weights for SinCAA are available at:
 > data/results/n1_weight0.1_innl2_both/
 
