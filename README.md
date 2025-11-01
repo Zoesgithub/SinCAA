@@ -53,6 +53,10 @@ SinCAA/
 ├── Tools/                      # Utility scripts and helper functions
 │   ├── generate_emb_from_smiles.py   # Generate embeddings from SMILES strings
 │   └── build_sim_aa.py         # Generate similar amino acids
+├── Experiments/                      # Code for downstream experiments
+│   ├── 0_benchmark   # Cell penetration ability prediction
+│   ├── 1_ppb   # Protein-peptide binding prediction
+│   └── 2_ppb_atom         # Atom-level protein-peptide binding prediction
 │
 ├── utils/                      # Utility functions for similarity calculations and data preparation
 │   ├── data_utils.py           # Data loader utilities
@@ -104,3 +108,7 @@ num_samples = 20     # Recommended: 20 or higher
 similarity = get_space_distance(A, B, grid_size, num_samples=num_samples)
 print(similarity)
 ```
+
+#### Downstream Applications
+
+For experiments related to downstream applications, please refer to the README in each folder under `experiments/`.
