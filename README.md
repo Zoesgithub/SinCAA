@@ -57,8 +57,7 @@ SinCAA/
 │   └── build_sim_aa.py         # Generate similar amino acids
 ├── Experiments/                      # Code for downstream experiments
 │   ├── 0_benchmark   # Cell penetration ability prediction
-│   ├── 1_ppb   # Protein-peptide binding prediction
-│   └── 2_ppb_atom         # Atom-level protein-peptide binding prediction
+│   └── 1_ppb   # Protein-peptide binding prediction
 │
 ├── utils/                      # Utility functions for similarity calculations and data preparation
 │   ├── data_utils.py           # Data loader utilities
