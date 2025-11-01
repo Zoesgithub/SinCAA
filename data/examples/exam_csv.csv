@@ -1,0 +1,10 @@
+SMILES
+Cc1ccc(C[C@H](NCCC(C)(C)C)C(=O)O)cc1
+O=C(O)[C@@H]1CC(F)(F)CN1
+C=CCCN[C@@H](Cc1ccc(C)cc1)C(=O)O
+CN[C@@H](CC1OC1CCN[C@@H](Cc1ccc(C(F)(F)F)cc1)C(=O)O)C(=O)O
+CN[C@@H](C[C@@H](C)CCN[C@@H](Cc1ccc(C(F)(F)F)cc1)C(=O)O)C(=O)O
+O=C(O)CNCC(F)F
+CCCOC[C@@H](NC)C(=O)O
+N[C@@H](CCc1cc(F)c2c(c1)CCC2)C(=O)O
+CN[C@@H](C/C=C\CCN[C@@H](Cc1ccc2c(c1)C(F)(F)CC2)C(=O)O)C(=O)O
