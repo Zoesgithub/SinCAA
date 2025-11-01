@@ -15,7 +15,24 @@ SinCAA demonstrates strong performance across multiple downstream tasks, includi
 
 
 
-## 📂 Quick start
+## 🔥 Quick start
+The pretrained weights for SinCAA are available at:
+> data/results/n1_weight0.1_innl2_both/
+
+To generate embeddings for peptides or amino acids from a CSV file containing molecular representations in the SMILES column, execute the following command:
+
+> python -m Tools.generate_emb_from_smiles \
+    --csv_path path_to_file.csv \
+    --pretrained_dir data/results/n1_weight0.1_innl2_both/ \
+    --save_dir save_path.npy
+
+
+Here:
+* --csv_path specifies the path to the input CSV file (e.g., data/examples/exam_csv.csv).
+
+* --pretrained_dir provides the directory containing the pretrained SinCAA model weights.
+
+* --save_dir defines the output path for saving the generated embeddings in NumPy format (.npy)
 
 ## 📂 Repository Structure
 
