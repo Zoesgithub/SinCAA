@@ -41,7 +41,7 @@ Here:
 * --save_dir defines the output path for saving the generated embeddings in NumPy format (.npy)
 
 ## 📂 Repository Structure
-The structure of repo is as follows: 
+The structure of the SinCAA repository is as follows:
 ``` text
 SinCAA/
 ├── data/                       # Datasets and pretrained model weights
@@ -68,13 +68,37 @@ SinCAA/
 ├── models/                     # Model architectures
 │   └── sincaa.py
 │
-├── notebooks/                  # Jupyter notebooks for experiments and analysis
-│   └── example_usage.ipynb
+├── figs/                  # Figures for README
 │
-├── scripts/                    # Shell scripts for training or inference
-│   └── run_training.sh
+├── scripts/                    # Shell scripts for training
+│   ├── split_data.py          # Utilities for model training
+│   └── train.sh
 │
 ├── environment.yml             # Dependencies
 ├── README.md                   # Project overview and usage instructions
 └── LICENSE                     # License information
+```
 
+### Usage
+#### Model Training
+
+Download the ZINC15 10M dataset from the official website. Split the training and validation datasets:
+
+`python scripts/split_data.py path_to_zinc_data`
+
+
+Start model training:
+
+`bash scripts/train.sh`
+
+#### Similarity Calculation
+
+To calculate the similarity between a pair of non-canonical amino acids A and B:
+
+`from utils.similarity_utils import get_space_distance
+
+grid_size = 1        # Recommended values: 0.5, 1, or 2
+num_samples = 20     # Recommended: 20 or higher
+
+similarity = get_space_distance(A, B, grid_size, num_samples=num_samples)
+print(similarity)`
