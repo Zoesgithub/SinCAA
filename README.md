@@ -18,19 +18,19 @@ SinCAA demonstrates strong performance across multiple downstream tasks, includi
 To ensure reproducibility, all dependencies required for SinCAA can be installed via the provided environment.yml file.
 Follow the steps below to create and activate the environment.
 
-> conda env create -f environment.yml ; conda activate sincaa
+` conda env create -f environment.yml ; conda activate sincaa `
 
-SinCAA relies on [OpenFold](https://github.com/aqlaboratory/openfold) for structure-based modeling and feature extraction. Please follow the official OpenFold installation instructions to install it properly.
+SinCAA relies on [OpenFold](https://github.com/aqlaboratory/openfold) for feature extraction. Please follow the official OpenFold installation instructions to install it properly.
 
 The pretrained weights for SinCAA are available at:
-> data/results/n1_weight0.1_innl2_both/
+` data/results/n1_weight0.1_innl2_both/`
 
 To generate embeddings for peptides or amino acids from a CSV file containing molecular representations in the SMILES column, execute the following command:
 
-> python -m Tools.generate_emb_from_smiles \
+` python -m Tools.generate_emb_from_smiles \
     --csv_path path_to_file.csv \
     --pretrained_dir data/results/n1_weight0.1_innl2_both/ \
-    --save_dir save_path.npy
+    --save_dir save_path.npy `
 
 
 Here:
@@ -41,4 +41,40 @@ Here:
 * --save_dir defines the output path for saving the generated embeddings in NumPy format (.npy)
 
 ## 📂 Repository Structure
+The structure of repo is as follows: 
+``` text
+SinCAA/
+├── data/                       # Datasets and pretrained model weights
+│   ├── AAList/                 # Non-canonical amino acids for model pretrianing
+│   ├── examples/               # Examples to show model inputs
+│   └── results/                # Model outputs and pretrained weights
+│       └── n1_weight0.1_innl2_both/
+│
+├── Tools/                      # Utility scripts and helper functions
+│   ├── generate_emb_from_smiles.py   # Generate embeddings from SMILES strings
+│   └── build_sim_aa.py         # Generate similar amino acids
+│
+├── utils/                      # Utility functions for similarity calculations and data preparation
+│   ├── data_utils.py           # Data loader utilities
+│   ├── data_constants.py       # Constants for data preparation
+│   ├── align_utils.py          # Utilities for protein chain alignment
+│   ├── amino_acid.py           # Amino acid feature extraction utilities
+│   ├── feats_acid.py           # Protein feature preprocessing utilities
+│   ├── rigid_utils.py          # Utilities for rigid structure handling
+│   ├── similarity_utils.py     # Utilities for conformational similarity calculation
+│   ├── train_utils.py          # Utilities for model training
+│   └── build_sim_aa.py         # Generate similar amino acids
+│
+├── models/                     # Model architectures
+│   └── sincaa.py
+│
+├── notebooks/                  # Jupyter notebooks for experiments and analysis
+│   └── example_usage.ipynb
+│
+├── scripts/                    # Shell scripts for training or inference
+│   └── run_training.sh
+│
+├── environment.yml             # Dependencies
+├── README.md                   # Project overview and usage instructions
+└── LICENSE                     # License information
 
