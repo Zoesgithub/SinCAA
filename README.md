@@ -95,10 +95,10 @@ Start model training:
 
 To calculate the similarity between a pair of non-canonical amino acids A and B:
 
-`from utils.similarity_utils import get_space_distance
+```from utils.similarity_utils import get_space_distance
 
 grid_size = 1        # Recommended values: 0.5, 1, or 2
 num_samples = 20     # Recommended: 20 or higher
 
 similarity = get_space_distance(A, B, grid_size, num_samples=num_samples)
-print(similarity)`
+print(similarity)```
