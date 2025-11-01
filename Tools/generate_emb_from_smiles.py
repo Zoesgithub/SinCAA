@@ -38,22 +38,6 @@ def main(args):
    
     model=load_model(args.pretrained_dir)
     data=pd.read_csv(args.csv_path)
-    '''for token in alphabet.all_toks:
-        if len(token)==1:
-            mol=Chem.MolFromSequence(token, flavor=0)
-            if mol is not None:
-                smiles=Chem.MolToSmiles(mol)
-                if len(smiles)==0:
-                    continue
-                inp=get_graph(smiles=smiles)
-                cpu_feats=collate_fn([[inp]])[0]
-                inp_feats={k:cpu_feats[k].cuda() for k in cpu_feats}
-                node_emb, pseudo_emb = model.calculate_topol_emb(
-                    inp_feats, None)
-                cpu_feats["node_emb"]=node_emb.detach().cpu()
-                cpu_feats["pseudo_emb"]=pseudo_emb.detach().cpu()
-                cpu_feats["label"]=torch.tensor(alphabet.get_idx(token)).reshape(-1)
-                torch.save(cpu_feats, "data/std_emb/"+"/"+myHash(smiles))'''
     save_res=[]
     for smiles in tqdm(data["SMILES"]):
         
