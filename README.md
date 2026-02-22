@@ -31,7 +31,7 @@ To generate embeddings for peptides or amino acids from a CSV file containing mo
 python -m Tools.generate_emb_from_smiles \
     --csv_path path_to_file.csv \
     --pretrained_dir data/results/n1_weight0.1_innl2_both/ \
-    --save_dir save_path.npy 
+    --save_path save_path.pt
 ```
 
 
@@ -40,7 +40,7 @@ Here:
 
 * --pretrained_dir provides the directory containing the pretrained SinCAA model weights.
 
-* --save_dir defines the output path for saving the generated embeddings in NumPy format (.npy)
+* --save_path defines the output path for saving the generated embeddings. The file is a PyTorch serialized object saved with torch.save and can be loaded in Python using torch.load.
 
 ## 📂 Repository Structure
 The structure of the SinCAA repository is as follows:

@@ -38,25 +38,27 @@ def main(args):
    
     model=load_model(args.pretrained_dir)
     data=pd.read_csv(args.csv_path)
-    save_res=[]
+    save_res={"embs":[], "node_embs":[], "smiles":[], "edges":[], "edge_attrs":[]}
     for smiles in tqdm(data["SMILES"]):
         
         if not isinstance(smiles, str):
             continue
         inp=get_graph(smiles=smiles)
-        node_emb=get_emb_from_feat(inp, model, "cuda")[0]
-
-        save_res.append(node_emb.mean(0).detach().cpu())
-        #torch.save(cpu_feats, args.save_dir+"/"+myHash(smiles))
+        node_emb, emb=get_emb_from_feat(inp, model, "cuda")
+        save_res["embs"].append(emb)
+        save_res["node_embs"].append(node_emb)
+        save_res["edges"].append(inp["edges"])
+        save_res["edge_attrs"].append(inp["edge_attrs"])
+        save_res["smiles"].append(smiles)
     save_res=np.stack(save_res)
-    np.save(args.save_dir, save_res)
+    torch.save(save_res, args.save_path)
 
 
 if __name__=="__main__":
     parser=ArgumentParser()
     parser.add_argument("--csv_path", help="the path to input csv file, which should contain SMILES column", type=str, required=True)
     parser.add_argument("--pretrained_dir", help="the path to pretrained content", type=str, required=True)
-    parser.add_argument("--save_dir", help="the path to save path", type=str, default="data/aaemb/")
+    parser.add_argument("--save_path", help="the path to save path", type=str, default="data/aaemb/")
     args=parser.parse_args()
     
     main(args)
