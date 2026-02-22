@@ -50,7 +50,6 @@ def main(args):
         save_res["edges"].append(inp["edges"])
         save_res["edge_attrs"].append(inp["edge_attrs"])
         save_res["smiles"].append(smiles)
-    save_res=np.stack(save_res)
     torch.save(save_res, args.save_path)
 
 
